@@ -6,13 +6,18 @@ import mmcv
 import imageio
 import numpy as np
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+# import jt
+# import jt.nn as nn
+# import jt.nn.functional as F
+import jittor as jt
+import jittor.nn as nn
 
-from lib import utils, dvgo, dcvgo, dmpigo
+#from lib import utils, dvgo, dcvgo, dmpigo
+from lib import utils, dvgo
+
 from lib.load_data import load_data
 
+#TODO: 
 from torch_efficient_distloss import flatten_eff_distloss
 
 
@@ -56,7 +61,7 @@ def config_parser():
     return parser
 
 
-@torch.no_grad()
+@jt.no_grad()
 def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
                       gt_imgs=None, savedir=None, render_factor=0,
                       eval_ssim=False, eval_lpips_alex=False, eval_lpips_vgg=False,prefix=''):
@@ -82,7 +87,8 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
 
         H, W = HW[i]
         K = Ks[i]
-        c2w = torch.Tensor(c2w)
+        # np to tensor
+        c2w = jt.array(c2w)
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
                 H, W, K, c2w, ndc, inverse_y=render_kwargs['inverse_y'],
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
@@ -95,7 +101,7 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
             for ro, rd, vd in zip(rays_o.split(8192, 0), rays_d.split(8192, 0), viewdirs.split(8192, 0))
         ]
         render_result = {
-            k: torch.cat([ret[k] for ret in render_result_chunks]).reshape(H,W,-1)
+            k: jt.contrib.concat([ret[k] for ret in render_result_chunks]).reshape(H,W,-1)
             for k in render_result_chunks[0].keys()
         }
         rgb = render_result['rgb_marched'].cpu().numpy()
@@ -111,12 +117,13 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
         if gt_imgs is not None and render_factor==0:
             p = -10. * np.log10(np.mean(np.square(rgb - gt_imgs[i])))
             psnrs.append(p)
-            if eval_ssim:
-                ssims.append(utils.rgb_ssim(rgb, gt_imgs[i], max_val=1))
-            if eval_lpips_alex:
-                lpips_alex.append(utils.rgb_lpips(rgb, gt_imgs[i], net_name='alex', device=c2w.device))
-            if eval_lpips_vgg:
-                lpips_vgg.append(utils.rgb_lpips(rgb, gt_imgs[i], net_name='vgg', device=c2w.device))
+            #TODO:
+            # if eval_ssim:
+            #     ssims.append(utils.rgb_ssim(rgb, gt_imgs[i], max_val=1))
+            # if eval_lpips_alex:
+            #     lpips_alex.append(utils.rgb_lpips(rgb, gt_imgs[i], net_name='alex', device=c2w.device))
+            # if eval_lpips_vgg:
+            #     lpips_vgg.append(utils.rgb_lpips(rgb, gt_imgs[i], net_name='vgg', device=c2w.device))
 
     if len(psnrs):
         print('Testing psnr', np.mean(psnrs), '(avg)')
@@ -142,9 +149,10 @@ def seed_everything():
     '''Seed everything for better reproducibility.
     (some pytorch operation is non-deterministic like the backprop of grid_samples)
     '''
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    random.seed(args.seed)
+    jt.misc.set_global_seed(args.seed)
+    # jt.manual_seed(args.seed)
+    # np.random.seed(args.seed)
+    # random.seed(args.seed)
 
 
 def load_everything(args, cfg):
@@ -163,15 +171,15 @@ def load_everything(args, cfg):
 
     # construct data tensor
     if data_dict['irregular_shape']:
-        data_dict['images'] = [torch.FloatTensor(im, device='cpu') for im in data_dict['images']]
+        data_dict['images'] = [jt.array(im,dtype="float32") for im in data_dict['images']]
     else:
-        data_dict['images'] = torch.FloatTensor(data_dict['images'], device='cpu')
-    data_dict['poses'] = torch.Tensor(data_dict['poses'])
+        data_dict['images'] = jt.array(data_dict['images'],dtype="float32")
+    data_dict['poses'] = jt.array(data_dict['poses'])
     return data_dict
 
 
 def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far):
-    xyz_min = torch.Tensor([np.inf, np.inf, np.inf])
+    xyz_min = jt.array([np.inf, np.inf, np.inf])
     xyz_max = -xyz_min
     for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
@@ -179,16 +187,16 @@ def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far)
                 ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         if cfg.data.ndc:
-            pts_nf = torch.stack([rays_o+rays_d*near, rays_o+rays_d*far])
+            pts_nf = jt.stack([rays_o+rays_d*near, rays_o+rays_d*far])
         else:
-            pts_nf = torch.stack([rays_o+viewdirs*near, rays_o+viewdirs*far])
-        xyz_min = torch.minimum(xyz_min, pts_nf.amin((0,1,2)))
-        xyz_max = torch.maximum(xyz_max, pts_nf.amax((0,1,2)))
+            pts_nf = jt.stack([rays_o+viewdirs*near, rays_o+viewdirs*far])
+        xyz_min = jt.minimum(xyz_min, pts_nf.amin((0,1,2)))
+        xyz_max = jt.maximum(xyz_max, pts_nf.amax((0,1,2)))
     return xyz_min, xyz_max
 
 def _compute_bbox_by_cam_frustrm_unbounded(cfg, HW, Ks, poses, i_train, near_clip):
     # Find a tightest cube that cover all camera centers
-    xyz_min = torch.Tensor([np.inf, np.inf, np.inf])
+    xyz_min = jt.Tensor([np.inf, np.inf, np.inf])
     xyz_max = -xyz_min
     for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
@@ -196,8 +204,8 @@ def _compute_bbox_by_cam_frustrm_unbounded(cfg, HW, Ks, poses, i_train, near_cli
                 ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         pts = rays_o + rays_d * near_clip
-        xyz_min = torch.minimum(xyz_min, pts.amin((0,1)))
-        xyz_max = torch.maximum(xyz_max, pts.amax((0,1)))
+        xyz_min = jt.minimum(xyz_min, pts.amin((0,1)))
+        xyz_max = jt.maximum(xyz_max, pts.amax((0,1)))
     center = (xyz_min + xyz_max) * 0.5
     radius = (center - xyz_min).max() * cfg.data.unbounded_inner_r
     xyz_min = center - radius
@@ -218,15 +226,15 @@ def compute_bbox_by_cam_frustrm(args, cfg, HW, Ks, poses, i_train, near, far, **
     print('compute_bbox_by_cam_frustrm: finish')
     return xyz_min, xyz_max
 
-@torch.no_grad()
+@jt.no_grad()
 def compute_bbox_by_coarse_geo(model_class, model_path, thres):
     print('compute_bbox_by_coarse_geo: start')
     eps_time = time.time()
     model = utils.load_model(model_class, model_path)
-    interp = torch.stack(torch.meshgrid(
-        torch.linspace(0, 1, model.world_size[0]),
-        torch.linspace(0, 1, model.world_size[1]),
-        torch.linspace(0, 1, model.world_size[2]),
+    interp = jt.stack(jt.meshgrid(
+        jt.linspace(0, 1, model.world_size[0]),
+        jt.linspace(0, 1, model.world_size[1]),
+        jt.linspace(0, 1, model.world_size[2]),
     ), -1)
     dense_xyz = model.xyz_min * (1-interp) + model.xyz_max * interp
     density = model.density(dense_xyz)
@@ -266,7 +274,7 @@ def create_new_model(cfg, cfg_model, cfg_train, xyz_min, xyz_max, stage, coarse_
             num_voxels=num_voxels,
             mask_cache_path=coarse_ckpt_path,
             **model_kwargs)
-    model = model.to(device)
+    # model = model.to(device)
     optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
     return model, optimizer
 
@@ -277,7 +285,9 @@ def load_existed_model(args, cfg, cfg_train, reload_ckpt_path):
         model_class = dcvgo.DirectContractedVoxGO
     else:
         model_class = dvgo.DirectVoxGO
-    model = utils.load_model(model_class, reload_ckpt_path).to(device)
+    # model = utils.load_model(model_class, reload_ckpt_path).to(device)
+    model = utils.load_model(model_class, reload_ckpt_path)
+
     optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
     model, optimizer, start = utils.load_checkpoint(
             model, optimizer, reload_ckpt_path, args.no_reload_optimizer)
@@ -286,7 +296,7 @@ def load_existed_model(args, cfg, cfg_train, reload_ckpt_path):
 
 def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, data_dict, stage, coarse_ckpt_path=None):
     # init
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # device = jt.device('cuda' if jt.cuda.is_available() else 'cpu')
     if abs(cfg_model.world_bound_scale - 1) > 1e-9:
         xyz_shift = (xyz_max - xyz_min) * (cfg_model.world_bound_scale - 1) / 2
         xyz_min -= xyz_shift
@@ -333,10 +343,14 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
     # init batch rays sampler
     def gather_training_rays():
+        # if data_dict['irregular_shape']:
+        #     rgb_tr_ori = [images[i].to('cpu' if cfg.data.load2gpu_on_the_fly else device) for i in i_train]
+        # else:
+        #     rgb_tr_ori = images[i_train].to('cpu' if cfg.data.load2gpu_on_the_fly else device)
         if data_dict['irregular_shape']:
-            rgb_tr_ori = [images[i].to('cpu' if cfg.data.load2gpu_on_the_fly else device) for i in i_train]
+            rgb_tr_ori = [images[i] for i in i_train]
         else:
-            rgb_tr_ori = images[i_train].to('cpu' if cfg.data.load2gpu_on_the_fly else device)
+            rgb_tr_ori = images[i_train] 
 
         if cfg_train.ray_sampler == 'in_maskcache':
             rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz = dvgo.get_training_rays_in_maskcache_sampling(
@@ -380,7 +394,8 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 rays_o_tr, rays_d_tr, imsz, render_kwargs, cfg_train.maskout_lt_nviews)
 
     # GOGO
-    torch.cuda.empty_cache()
+    #TODO:
+    # jt.cuda.empty_cache()
     psnr_lst = []
     time0 = time.time()
     global_step = -1
@@ -402,7 +417,8 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 raise NotImplementedError
             optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
             model.act_shift -= cfg_train.decay_after_scale
-            torch.cuda.empty_cache()
+            #TODO: 
+            # jt.cuda.empty_cache()
 
         # random sample rays
         if cfg_train.ray_sampler in ['flatten', 'in_maskcache']:
@@ -412,21 +428,21 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rays_d = rays_d_tr[sel_i]
             viewdirs = viewdirs_tr[sel_i]
         elif cfg_train.ray_sampler == 'random':
-            sel_b = torch.randint(rgb_tr.shape[0], [cfg_train.N_rand])
-            sel_r = torch.randint(rgb_tr.shape[1], [cfg_train.N_rand])
-            sel_c = torch.randint(rgb_tr.shape[2], [cfg_train.N_rand])
+            sel_b = jt.randint(rgb_tr.shape[0], [cfg_train.N_rand])
+            sel_r = jt.randint(rgb_tr.shape[1], [cfg_train.N_rand])
+            sel_c = jt.randint(rgb_tr.shape[2], [cfg_train.N_rand])
             target = rgb_tr[sel_b, sel_r, sel_c]
             rays_o = rays_o_tr[sel_b, sel_r, sel_c]
             rays_d = rays_d_tr[sel_b, sel_r, sel_c]
             viewdirs = viewdirs_tr[sel_b, sel_r, sel_c]
         else:
             raise NotImplementedError
-
-        if cfg.data.load2gpu_on_the_fly:
-            target = target.to(device)
-            rays_o = rays_o.to(device)
-            rays_d = rays_d.to(device)
-            viewdirs = viewdirs.to(device)
+        #TODO:
+        # if cfg.data.load2gpu_on_the_fly:
+        #     target = target.to(device)
+        #     rays_o = rays_o.to(device)
+        #     rays_d = rays_d.to(device)
+        #     viewdirs = viewdirs.to(device)
 
         # volume rendering
         render_result = model(
@@ -436,11 +452,11 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
         # gradient descent step
         optimizer.zero_grad(set_to_none=True)
-        loss = cfg_train.weight_main * F.mse_loss(render_result['rgb_marched'], target)
+        loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)
         psnr = utils.mse2psnr(loss.detach())
         if cfg_train.weight_entropy_last > 0:
             pout = render_result['alphainv_last'].clamp(1e-6, 1-1e-6)
-            entropy_last_loss = -(pout*torch.log(pout) + (1-pout)*torch.log(1-pout)).mean()
+            entropy_last_loss = -(pout*jt.log(pout) + (1-pout)*jt.log(1-pout)).mean()
             loss += cfg_train.weight_entropy_last * entropy_last_loss
         if cfg_train.weight_nearclip > 0:
             near_thres = data_dict['near_clip'] / model.scene_radius[0].item()
@@ -490,7 +506,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
         if global_step%args.i_weights==0:
             path = os.path.join(cfg.basedir, cfg.expname, f'{stage}_{global_step:06d}.tar')
-            torch.save({
+            jt.save({
                 'global_step': global_step,
                 'model_kwargs': model.get_kwargs(),
                 'model_state_dict': model.state_dict(),
@@ -499,7 +515,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             print(f'scene_rep_reconstruction ({stage}): saved checkpoints at', path)
 
     if global_step != -1:
-        torch.save({
+        jt.save({
             'global_step': global_step,
             'model_kwargs': model.get_kwargs(),
             'model_state_dict': model.state_dict(),
@@ -568,11 +584,12 @@ if __name__=='__main__':
     cfg = mmcv.Config.fromfile(args.config)
 
     # init enviroment
-    if torch.cuda.is_available():
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+    # if jt.cuda.is_available():
+    #     jt.set_default_tensor_type('jt.cuda.FloatTensor')
+    #     device = jt.device('cuda')
+    # else:
+    #     device = jt.device('cpu')
+
     seed_everything()
 
     # load images / poses / camera settings / data split
@@ -591,8 +608,10 @@ if __name__=='__main__':
             rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
                     H, W, K, c2w, cfg.data.ndc, inverse_y=cfg.data.inverse_y,
                     flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y,)
-            cam_o = rays_o[0,0].cpu().numpy()
-            cam_d = rays_d[[0,0,-1,-1],[0,-1,0,-1]].cpu().numpy()
+            # cam_o = rays_o[0,0].cpu().numpy()
+            # cam_d = rays_d[[0,0,-1,-1],[0,-1,0,-1]].cpu().numpy()
+            cam_o = rays_o[0,0].numpy()
+            cam_d = rays_d[[0,0,-1,-1],[0,-1,0,-1]].numpy()
             cam_lst.append(np.array([cam_o, *(cam_o+cam_d*max(near, far*0.05))]))
         np.savez_compressed(args.export_bbox_and_cams_only,
             xyz_min=xyz_min.cpu().numpy(), xyz_max=xyz_max.cpu().numpy(),
@@ -602,11 +621,15 @@ if __name__=='__main__':
 
     if args.export_coarse_only:
         print('Export coarse visualization...')
-        with torch.no_grad():
+        with jt.no_grad():
             ckpt_path = os.path.join(cfg.basedir, cfg.expname, 'coarse_last.tar')
-            model = utils.load_model(dvgo.DirectVoxGO, ckpt_path).to(device)
-            alpha = model.activate_density(model.density.get_dense_grid()).squeeze().cpu().numpy()
-            rgb = torch.sigmoid(model.k0.get_dense_grid()).squeeze().permute(1,2,3,0).cpu().numpy()
+           
+            # model = utils.load_model(dvgo.DirectVoxGO, ckpt_path).to(device)
+            # alpha = model.activate_density(model.density.get_dense_grid()).squeeze().cpu().numpy()
+            # rgb = jt.sigmoid(model.k0.get_dense_grid()).squeeze().permute(1,2,3,0).cpu().numpy()
+            model = utils.load_model(dvgo.DirectVoxGO, ckpt_path)
+            alpha = model.activate_density(model.density.get_dense_grid()).squeeze().numpy()
+            rgb = jt.sigmoid(model.k0.get_dense_grid()).squeeze().permute(1,2,3,0).numpy()
         np.savez_compressed(args.export_coarse_only, alpha=alpha, rgb=rgb)
         print('done')
         sys.exit()
@@ -628,7 +651,8 @@ if __name__=='__main__':
             model_class = dcvgo.DirectContractedVoxGO
         else:
             model_class = dvgo.DirectVoxGO
-        model = utils.load_model(model_class, ckpt_path).to(device)
+        model = utils.load_model(model_class, ckpt_path)
+        #model = utils.load_model(model_class, ckpt_path).to(device)
         stepsize = cfg.fine_model_and_render.stepsize
         render_viewpoints_kwargs = {
             'model': model,

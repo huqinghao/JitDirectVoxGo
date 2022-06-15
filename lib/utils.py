@@ -3,17 +3,22 @@ import numpy as np
 import scipy.signal
 from typing import List, Optional
 
-from torch import Tensor
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import jittor as jt
+from jittor import init
+from jittor import nn
+from jt import Tensor
+
+# import jt
+# import jt.nn as nn
+# import jt.nn.functional as F
 
 from .masked_adam import MaskedAdam
 
-
+def log10(x):
+    return jt.log(x)/math.log(10.0)
 ''' Misc
 '''
-mse2psnr = lambda x : -10. * torch.log10(x)
+mse2psnr = lambda x : -10. * log10(x)
 to8b = lambda x : (255*np.clip(x,0,1)).astype(np.uint8)
 
 def create_optimizer_or_freeze_model(model, cfg_train, global_step):
@@ -49,7 +54,7 @@ def create_optimizer_or_freeze_model(model, cfg_train, global_step):
 ''' Checkpoint utils
 '''
 def load_checkpoint(model, optimizer, ckpt_path, no_reload_optimizer):
-    ckpt = torch.load(ckpt_path)
+    ckpt = jt.load(ckpt_path)
     start = ckpt['global_step']
     model.load_state_dict(ckpt['model_state_dict'])
     if not no_reload_optimizer:
@@ -58,7 +63,7 @@ def load_checkpoint(model, optimizer, ckpt_path, no_reload_optimizer):
 
 
 def load_model(model_class, ckpt_path):
-    ckpt = torch.load(ckpt_path)
+    ckpt = jt.load(ckpt_path)
     model = model_class(**ckpt['model_kwargs'])
     model.load_state_dict(ckpt['model_state_dict'])
     return model
@@ -120,12 +125,16 @@ def init_lpips(net_name, device):
     assert net_name in ['alex', 'vgg']
     import lpips
     print(f'init_lpips: lpips_{net_name}')
-    return lpips.LPIPS(net=net_name, version='0.1').eval().to(device)
+    return lpips.LPIPS(net=net_name, version='0.1').eval()
+    # return lpips.LPIPS(net=net_name, version='0.1').eval().to(device)
+
 
 def rgb_lpips(np_gt, np_im, net_name, device):
     if net_name not in __LPIPS__:
         __LPIPS__[net_name] = init_lpips(net_name, device)
-    gt = torch.from_numpy(np_gt).permute([2, 0, 1]).contiguous().to(device)
-    im = torch.from_numpy(np_im).permute([2, 0, 1]).contiguous().to(device)
+    # gt = jt.array(np_gt).permute([2, 0, 1]).contiguous().to(device)
+    # im = jt.array(np_im).permute([2, 0, 1]).contiguous().to(device)
+    gt = jt.array(np_gt).permute([2, 0, 1])
+    im = jt.array(np_im).permute([2, 0, 1])
     return __LPIPS__[net_name](gt, im, normalize=True).item()
 
