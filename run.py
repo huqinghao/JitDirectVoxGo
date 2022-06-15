@@ -39,6 +39,7 @@ def config_parser():
     parser.add_argument("--render_only", action='store_true',
                         help='do not optimize, reload weights and render out render_poses path')
     parser.add_argument("--render_test", action='store_true')
+    parser.add_argument("--render_val", action='store_true')
     parser.add_argument("--render_train", action='store_true')
     parser.add_argument("--render_video", action='store_true')
     parser.add_argument("--render_video_factor", type=float, default=0,
@@ -58,7 +59,7 @@ def config_parser():
 @torch.no_grad()
 def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
                       gt_imgs=None, savedir=None, render_factor=0,
-                      eval_ssim=False, eval_lpips_alex=False, eval_lpips_vgg=False):
+                      eval_ssim=False, eval_lpips_alex=False, eval_lpips_vgg=False,prefix=''):
     '''Render images for the given viewpoints; run evaluation if gt given.
     '''
     assert len(render_poses) == len(HW) and len(HW) == len(Ks)
@@ -127,7 +128,7 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
         print(f'Writing images to {savedir}')
         for i in trange(len(rgbs)):
             rgb8 = utils.to8b(rgbs[i])
-            filename = os.path.join(savedir, '{:03d}.png'.format(i))
+            filename = os.path.join(savedir, prefix+'_r_{}.png'.format(i))
             imageio.imwrite(filename, rgb8)
 
     rgbs = np.array(rgbs)
@@ -615,7 +616,7 @@ if __name__=='__main__':
         train(args, cfg, data_dict)
 
     # load model for rendring
-    if args.render_test or args.render_train or args.render_video:
+    if args.render_test or args.render_train or args.render_val or args.render_video:
         if args.ft_path:
             ckpt_path = args.ft_path
         else:
@@ -642,6 +643,7 @@ if __name__=='__main__':
                 'flip_y': cfg.data.flip_y,
                 'render_depth': True,
             },
+            'prefix':cfg.data.datadir.split("/")[-1]
         }
 
     # render trainset and eval
@@ -665,9 +667,23 @@ if __name__=='__main__':
         os.makedirs(testsavedir, exist_ok=True)
         rgbs, depths, bgmaps = render_viewpoints(
                 render_poses=data_dict['poses'][data_dict['i_test']],
-                HW=data_dict['HW'][data_dict['i_test']],
-                Ks=data_dict['Ks'][data_dict['i_test']],
-                gt_imgs=[data_dict['images'][i].cpu().numpy() for i in data_dict['i_test']],
+                HW=data_dict['HW'][data_dict['i_val']],
+                Ks=data_dict['Ks'][data_dict['i_val']],
+                gt_imgs=None,
+                savedir=testsavedir,
+                eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
+                **render_viewpoints_kwargs)
+        imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
+        imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
+    
+    if args.render_val:
+        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_val_{ckpt_name}')
+        os.makedirs(testsavedir, exist_ok=True)
+        rgbs, depths, bgmaps = render_viewpoints(
+                render_poses=data_dict['poses'][data_dict['i_val']],
+                HW=data_dict['HW'][data_dict['i_val']],
+                Ks=data_dict['Ks'][data_dict['i_val']],
+                gt_imgs=[data_dict['images'][i].cpu().numpy() for i in data_dict['i_val']],
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)

@@ -54,7 +54,8 @@ def load_data(args):
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
 
-        near, far = 2., 6.
+        # near, far = 2., 6.
+        near, far = args.near, args.far
 
         if images.shape[-1] == 4:
             if args.white_bkgd:
