@@ -6,7 +6,7 @@ from typing import List, Optional
 import jittor as jt
 from jittor import init
 from jittor import nn
-from jt import Tensor
+# from jt import Tensor
 
 # import jt
 # import jt.nn as nn

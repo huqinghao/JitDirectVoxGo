@@ -11,22 +11,22 @@ import jittor as jt
 import jittor.nn as nn
 # import jt.nn.functional as F
 
-from jt.utils.cpp_extension import load
+# from jt.utils.cpp_extension import load
 #TODO
-parent_dir = os.path.dirname(os.path.abspath(__file__))
-render_utils_cuda = load(
-        name='render_utils_cuda',
-        sources=[
-            os.path.join(parent_dir, path)
-            for path in ['cuda/render_utils.cpp', 'cuda/render_utils_kernel.cu']],
-        verbose=True)
+# parent_dir = os.path.dirname(os.path.abspath(__file__))
+# render_utils_cuda = load(
+#         name='render_utils_cuda',
+#         sources=[
+#             os.path.join(parent_dir, path)
+#             for path in ['cuda/render_utils.cpp', 'cuda/render_utils_kernel.cu']],
+#         verbose=True)
 
-total_variation_cuda = load(
-        name='total_variation_cuda',
-        sources=[
-            os.path.join(parent_dir, path)
-            for path in ['cuda/total_variation.cpp', 'cuda/total_variation_kernel.cu']],
-        verbose=True)
+# total_variation_cuda = load(
+#         name='total_variation_cuda',
+#         sources=[
+#             os.path.join(parent_dir, path)
+#             for path in ['cuda/total_variation.cpp', 'cuda/total_variation_kernel.cu']],
+#         verbose=True)
 
 
 def create_grid(type, **kwargs):
@@ -50,7 +50,8 @@ class DenseGrid(nn.Module):
         self.xyz_min=jt.float32(xyz_min).stop_grad()
         self.xyz_max=jt.float32(xyz_max).stop_grad()
         # self.grid = (jt.zeros([1, channels, *world_size]))
-        self.grid =jt.zeros([1, channels, *world_size])
+        #TODO: jittor *Var
+        self.grid =jt.zeros([1, channels, *world_size.tolist()])
 
     def execute(self, xyz):
         '''
@@ -58,9 +59,9 @@ class DenseGrid(nn.Module):
         '''
         shape = xyz.shape[:-1]
         xyz = xyz.reshape(1,1,1,-1,3)
-        ind_norm = ((xyz - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip((-1,)) * 2 - 1
+        ind_norm = ((xyz - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
         out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
-        out = out.reshape(self.channels,-1).T.reshape(*shape,self.channels)
+        out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)
         if self.channels == 1:
             out = out.squeeze(-1)
         return out

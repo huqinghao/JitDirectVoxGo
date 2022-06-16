@@ -4,12 +4,12 @@ from jittor import init
 from jittor import nn
 # from jt.utils.cpp_extension import load
 #TODO:
-parent_dir = os.path.dirname(os.path.abspath(__file__))
-sources=['cuda/adam_upd.cpp', 'cuda/adam_upd_kernel.cu']
-adam_upd_cuda = load(
-        name='adam_upd_cuda',
-        sources=[os.path.join(parent_dir, path) for path in sources],
-        verbose=True)
+# parent_dir = os.path.dirname(os.path.abspath(__file__))
+# sources=['cuda/adam_upd.cpp', 'cuda/adam_upd_kernel.cu']
+# adam_upd_cuda = load(
+#         name='adam_upd_cuda',
+#         sources=[os.path.join(parent_dir, path) for path in sources],
+#         verbose=True)
 
 
 ''' Extend Adam optimizer

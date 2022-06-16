@@ -11,19 +11,21 @@ from jittor import nn
 # import jt.nn.functional as F
 
 #TODO
-from torch_scatter import segment_coo
+# from torch_scatter import segment_coo
+from jittor import scatter
+
 from jittor import Function
 from . import grid
 
 #TODO: utils
-from jt.utils.cpp_extension import load
-parent_dir = os.path.dirname(os.path.abspath(__file__))
-render_utils_cuda = load(
-        name='render_utils_cuda',
-        sources=[
-            os.path.join(parent_dir, path)
-            for path in ['cuda/render_utils.cpp', 'cuda/render_utils_kernel.cu']],
-        verbose=True)
+# from jt.utils.cpp_extension import load
+# parent_dir = os.path.dirname(os.path.abspath(__file__))
+# render_utils_cuda = load(
+#         name='render_utils_cuda',
+#         sources=[
+#             os.path.join(parent_dir, path)
+#             for path in ['cuda/render_utils.cpp', 'cuda/render_utils_kernel.cu']],
+#         verbose=True)
 
 
 '''Model'''
@@ -137,7 +139,9 @@ class DirectVoxGO(jt.nn.Module):
             ), -1)
             mask = mask_cache(self_grid_xyz)
         else:
-            mask = jt.ones(list(mask_cache_world_size), dtype=jt.bool)
+            #TODO: list(Var)==>list not supported
+            #mask = jt.ones(list(mask_cache_world_size), dtype=jt.bool)
+            mask = jt.ones(mask_cache_world_size.tolist(), dtype=jt.bool)
         self.mask_cache = grid.MaskGrid(
                 path=None, mask=mask,
                 xyz_min=self.xyz_min, xyz_max=self.xyz_max)
@@ -178,14 +182,15 @@ class DirectVoxGO(jt.nn.Module):
     def maskout_near_cam_vox(self, cam_o, near_clip):
         # maskout grid points that between cameras and their near planes
         self_grid_xyz = jt.stack(jt.meshgrid(
-            jt.linspace(self.xyz_min[0], self.xyz_max[0], self.world_size[0]),
-            jt.linspace(self.xyz_min[1], self.xyz_max[1], self.world_size[1]),
-            jt.linspace(self.xyz_min[2], self.xyz_max[2], self.world_size[2]),
+            jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.world_size[0].item()),
+            jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.world_size[1].item()),
+            jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.world_size[2].item()),
         ), -1)
         nearest_dist = jt.stack([
-            (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().amin(-1)
+            (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().min(-1)
+            # (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().amin(-1)
             for co in cam_o.split(100)  # for memory saving
-        ]).amin(0)
+        ]).min(0)
         self.density.grid[nearest_dist[None,None] <= near_clip] = -100
 
     @jt.no_grad()
@@ -200,9 +205,9 @@ class DirectVoxGO(jt.nn.Module):
 
         if np.prod(self.world_size.tolist()) <= 256**3:
             self_grid_xyz = jt.stack(jt.meshgrid(
-                jt.linspace(self.xyz_min[0], self.xyz_max[0], self.world_size[0]),
-                jt.linspace(self.xyz_min[1], self.xyz_max[1], self.world_size[1]),
-                jt.linspace(self.xyz_min[2], self.xyz_max[2], self.world_size[2]),
+                jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.world_size[0].item()),
+                jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.world_size[1].item()),
+                jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.world_size[2].item()),
             ), -1)
             self_alpha = nn.max_pool3d(self.activate_density(self.density.get_dense_grid()), kernel_size=3, padding=1, stride=1)[0,0]
             self.mask_cache = grid.MaskGrid(
@@ -214,9 +219,9 @@ class DirectVoxGO(jt.nn.Module):
     @jt.no_grad()
     def update_occupancy_cache(self):
         cache_grid_xyz = jt.stack(jt.meshgrid(
-            jt.linspace(self.xyz_min[0], self.xyz_max[0], self.mask_cache.mask.shape[0]),
-            jt.linspace(self.xyz_min[1], self.xyz_max[1], self.mask_cache.mask.shape[1]),
-            jt.linspace(self.xyz_min[2], self.xyz_max[2], self.mask_cache.mask.shape[2]),
+            jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.mask_cache.mask.shape[0].item()),
+            jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.mask_cache.mask.shape[1].item()),
+            jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.mask_cache.mask.shape[2].item()),
         ), -1)
         cache_grid_density = self.density(cache_grid_xyz)[None,None]
         cache_grid_alpha = self.activate_density(cache_grid_density)
@@ -227,11 +232,12 @@ class DirectVoxGO(jt.nn.Module):
         print('dvgo: voxel_count_views start')
         far = 1e9  # the given far can be too small while rays stop when hitting scene bbox
         eps_time = time.time()
-        N_samples = int(np.linalg.norm(np.array(self.world_size.cpu())+1) / stepsize) + 1
+        N_samples = int(np.linalg.norm(np.array(self.world_size.numpy())+1) / stepsize) + 1
         rng = jt.arange(N_samples)[None].float()
         count = jt.zeros_like(self.density.get_dense_grid())
         #TODO:
         # device = rng.device
+        optimizer=jt.optim.SGD()
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
             ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
             if irregular_shape:
@@ -247,11 +253,15 @@ class DirectVoxGO(jt.nn.Module):
                 vec = jt.where(rays_d==0, jt.full_like(rays_d, 1e-6), rays_d)
                 rate_a = (self.xyz_max - rays_o) / vec
                 rate_b = (self.xyz_min - rays_o) / vec
-                t_min = jt.minimum(rate_a, rate_b).amax(-1).clamp(min=near, max=far)
-                t_max = jt.maximum(rate_a, rate_b).amin(-1).clamp(min=near, max=far)
+                # t_min = jt.minimum(rate_a, rate_b).amax(-1).clamp(min=near, max=far)
+                # t_max = jt.maximum(rate_a, rate_b).amin(-1).clamp(min=near, max=far)
+                # jt.clamp()
+                t_min = jt.minimum(rate_a, rate_b).max(-1).clamp(min_v=near, max_v=far)
+                t_max = jt.maximum(rate_a, rate_b).min(-1).clamp(min_v=near, max_v=far)
                 step = stepsize * self.voxel_size * rng
                 interpx = (t_min[...,None] + step/rays_d.norm(dim=-1,keepdim=True))
                 rays_pts = rays_o[...,None,:] + rays_d[...,None,:] * interpx[...,None]
+                #TODO: backward not supported...... fuck
                 ones(rays_pts).sum().backward()
             with jt.no_grad():
                 count += (ones.grid.grad > 1)
@@ -387,7 +397,9 @@ class DirectVoxGO(jt.nn.Module):
                 rgb = jt.sigmoid(rgb_logit + k0_diffuse)
 
         # Ray marching
-        rgb_marched = segment_coo(
+        #TODO: scatter --> segment_coo
+        #TODO: whether it need gradient
+        rgb_marched = scatter(
                 src=(weights.unsqueeze(-1) * rgb),
                 index=ray_id,
                 out=jt.zeros([N, 3]),
@@ -404,7 +416,9 @@ class DirectVoxGO(jt.nn.Module):
 
         if render_kwargs.get('render_depth', False):
             with jt.no_grad():
-                depth = segment_coo(
+                #TODO: 
+                # scatter --> segment_coo
+                depth = scatter(
                         src=(weights * step_id),
                         index=ray_id,
                         out=jt.zeros([N]),
@@ -413,7 +427,8 @@ class DirectVoxGO(jt.nn.Module):
 
         return ret_dict
 
-
+#TODO:
+# if jt.flags.no_grad:
 ''' Misc
 '''
 class Raw2Alpha(Function):
@@ -476,8 +491,12 @@ def get_rays(H, W, K, c2w, inverse_y, flip_x, flip_y, mode='center'):
     # i, j = jt.meshgrid(
     #     jt.linspace(0, W-1, W, device=c2w.device),
     #     jt.linspace(0, H-1, H, device=c2w.device))  # pytorch's meshgrid has indexing='ij'
+    #TODO:
+    # bugs: H,W with np.int64 not working  change to int
+    H=int(H)
+    W=int(W)
     i, j = jt.meshgrid(
-        jt.linspace(0, W-1, W),
+        jt.misc.linspace(0, W-1, W),
         jt.linspace(0, H-1, H))  # pytorch's meshgrid has indexing='ij'
     i = i.t().float()
     j = j.t().float()
@@ -552,11 +571,14 @@ def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_
     assert len(np.unique(Ks.reshape(len(Ks),-1), axis=0)) == 1
     assert len(rgb_tr) == len(train_poses) and len(rgb_tr) == len(Ks) and len(rgb_tr) == len(HW)
     H, W = HW[0]
+    H=int(H)
+    W=int(W)
     K = Ks[0]
     eps_time = time.time()
+    #TODO: int64 not supported
     rays_o_tr = jt.zeros([len(rgb_tr), H, W, 3])
-    rays_d_tr = jt.zeros([len(rgb_tr), H, W, 3])
-    viewdirs_tr = jt.zeros([len(rgb_tr), H, W, 3])
+    rays_d_tr = jt.zeros([len(rgb_tr),H,  W, 3])
+    viewdirs_tr = jt.zeros([len(rgb_tr), H,  W, 3])
     # rays_o_tr = jt.zeros([len(rgb_tr), H, W, 3], device=rgb_tr.device)
     # rays_d_tr = jt.zeros([len(rgb_tr), H, W, 3], device=rgb_tr.device)
     # viewdirs_tr = jt.zeros([len(rgb_tr), H, W, 3], device=rgb_tr.device)
@@ -564,12 +586,13 @@ def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_
     for i, c2w in enumerate(train_poses):
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w, ndc=ndc, inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
+        #TODO: no copy_ and device implemented, use update as an alternative, 
         # rays_o_tr[i].copy_(rays_o.to(rgb_tr.device))
         # rays_d_tr[i].copy_(rays_d.to(rgb_tr.device))
         # viewdirs_tr[i].copy_(viewdirs.to(rgb_tr.device))
-        rays_o_tr[i].copy_(rays_o)
-        rays_d_tr[i].copy_(rays_d)
-        viewdirs_tr[i].copy_(viewdirs)
+        rays_o_tr[i].update(rays_o)
+        rays_d_tr[i].update(rays_d)
+        viewdirs_tr[i].update(viewdirs)
         del rays_o, rays_d, viewdirs
     eps_time = time.time() - eps_time
     print('get_training_rays: finish (eps time:', eps_time, 'sec)')

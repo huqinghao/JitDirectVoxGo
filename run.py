@@ -18,7 +18,7 @@ from lib import utils, dvgo
 from lib.load_data import load_data
 
 #TODO: 
-from torch_efficient_distloss import flatten_eff_distloss
+# from torch_efficient_distloss import flatten_eff_distloss
 
 
 def config_parser():
@@ -179,8 +179,13 @@ def load_everything(args, cfg):
 
 
 def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far):
-    xyz_min = jt.array([np.inf, np.inf, np.inf])
-    xyz_max = -xyz_min
+    #TODO: bugs, min(inf,data) cause NaN errr 
+    #xyz_min = jt.array([np.inf, np.inf, np.inf])
+    #xyz_max = -xyz_min
+    max_val=np.finfo(np.float16).max
+    min_val=np.finfo(np.float16).min
+    xyz_min = jt.array([max_val, max_val,max_val])
+    xyz_max = jt.array([min_val, min_val,min_val])
     for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w,
@@ -190,10 +195,12 @@ def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far)
             pts_nf = jt.stack([rays_o+rays_d*near, rays_o+rays_d*far])
         else:
             pts_nf = jt.stack([rays_o+viewdirs*near, rays_o+viewdirs*far])
-        xyz_min = jt.minimum(xyz_min, pts_nf.amin((0,1,2)))
-        xyz_max = jt.maximum(xyz_max, pts_nf.amax((0,1,2)))
+        #TODO：amin is not implemented 
+        # use min 
+        xyz_min = jt.minimum(xyz_min, pts_nf.min((0,1,2)))
+        xyz_max = jt.maximum(xyz_max, pts_nf.max((0,1,2)))
     return xyz_min, xyz_max
-
+    
 def _compute_bbox_by_cam_frustrm_unbounded(cfg, HW, Ks, poses, i_train, near_clip):
     # Find a tightest cube that cover all camera centers
     xyz_min = jt.Tensor([np.inf, np.inf, np.inf])
@@ -204,8 +211,8 @@ def _compute_bbox_by_cam_frustrm_unbounded(cfg, HW, Ks, poses, i_train, near_cli
                 ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         pts = rays_o + rays_d * near_clip
-        xyz_min = jt.minimum(xyz_min, pts.amin((0,1)))
-        xyz_max = jt.maximum(xyz_max, pts.amax((0,1)))
+        xyz_min = jt.minimum(xyz_min, pts.min((0,1)))
+        xyz_max = jt.maximum(xyz_max, pts.max((0,1)))
     center = (xyz_min + xyz_max) * 0.5
     radius = (center - xyz_min).max() * cfg.data.unbounded_inner_r
     xyz_min = center - radius
@@ -241,8 +248,10 @@ def compute_bbox_by_coarse_geo(model_class, model_path, thres):
     alpha = model.activate_density(density)
     mask = (alpha > thres)
     active_xyz = dense_xyz[mask]
-    xyz_min = active_xyz.amin(0)
-    xyz_max = active_xyz.amax(0)
+    #TODO:
+    #use min instead of amin
+    xyz_min = active_xyz.min(0)
+    xyz_max = active_xyz.max(0)
     print('compute_bbox_by_coarse_geo: xyz_min', xyz_min)
     print('compute_bbox_by_coarse_geo: xyz_max', xyz_max)
     eps_time = time.time() - eps_time
@@ -466,12 +475,13 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 nearclip_loss = (density - density.detach()).sum()
                 loss += cfg_train.weight_nearclip * nearclip_loss
         if cfg_train.weight_distortion > 0:
-            n_max = render_result['n_max']
-            s = render_result['s']
-            w = render_result['weights']
-            ray_id = render_result['ray_id']
-            loss_distortion = flatten_eff_distloss(w, s, 1/n_max, ray_id)
-            loss += cfg_train.weight_distortion * loss_distortion
+            raise Exception("NOT IMPLEMENTED")
+            # n_max = render_result['n_max']
+            # s = render_result['s']
+            # w = render_result['weights']
+            # ray_id = render_result['ray_id']
+            # loss_distortion = flatten_eff_distloss(w, s, 1/n_max, ray_id)
+            # loss += cfg_train.weight_distortion * loss_distortion
         if cfg_train.weight_rgbper > 0:
             rgbper = (render_result['raw_rgb'] - target[render_result['ray_id']]).pow(2).sum(-1)
             rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
@@ -613,8 +623,11 @@ if __name__=='__main__':
             cam_o = rays_o[0,0].numpy()
             cam_d = rays_d[[0,0,-1,-1],[0,-1,0,-1]].numpy()
             cam_lst.append(np.array([cam_o, *(cam_o+cam_d*max(near, far*0.05))]))
+        # np.savez_compressed(args.export_bbox_and_cams_only,
+        #     xyz_min=xyz_min.cpu().numpy(), xyz_max=xyz_max.cpu().numpy(),
+        #     cam_lst=np.array(cam_lst))
         np.savez_compressed(args.export_bbox_and_cams_only,
-            xyz_min=xyz_min.cpu().numpy(), xyz_max=xyz_max.cpu().numpy(),
+            xyz_min=xyz_min.numpy(), xyz_max=xyz_max.numpy(),
             cam_lst=np.array(cam_lst))
         print('done')
         sys.exit()
