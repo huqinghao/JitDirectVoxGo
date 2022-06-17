@@ -237,9 +237,10 @@ class DirectVoxGO(jt.nn.Module):
         count = jt.zeros_like(self.density.get_dense_grid())
         #TODO:
         # device = rng.device
-        optimizer=jt.optim.SGD()
+       
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
             ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
+            optimizer=jt.optim.SGD(ones.grid,0)
             if irregular_shape:
                 rays_o_ = rays_o_.split(10000)
                 rays_d_ = rays_d_.split(10000)
@@ -262,9 +263,10 @@ class DirectVoxGO(jt.nn.Module):
                 interpx = (t_min[...,None] + step/rays_d.norm(dim=-1,keepdim=True))
                 rays_pts = rays_o[...,None,:] + rays_d[...,None,:] * interpx[...,None]
                 #TODO: backward not supported...... fuck
-                ones(rays_pts).sum().backward()
+                optimizer.backward(ones(rays_pts).sum())
+
             with jt.no_grad():
-                count += (ones.grid.grad > 1)
+                count += ( ones.grid.opt_grad(optimizer)> 1)
         eps_time = time.time() - eps_time
         print('dvgo: voxel_count_views finish (eps time:', eps_time, 'sec)')
         return count
