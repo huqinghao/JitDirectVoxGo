@@ -68,18 +68,6 @@ __global__ void infer_t_minmax_cuda_kernel(
     const int threads = 512;
     const int blocks = (n_rays + threads - 1) / threads;
     
-    /*
-    AT_DISPATCH_FLOATING_TYPES(rays_o.type(), "infer_t_minmax_cuda", ([&] {
-        infer_t_minmax_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            rays_o.data<scalar_t>(),
-            rays_d.data<scalar_t>(),
-            xyz_min.data<scalar_t>(),
-            xyz_max.data<scalar_t>(),
-            near, far, n_rays,
-            t_min.data<scalar_t>(),
-            t_max.data<scalar_t>());
-    }));
-    */
     
     infer_t_minmax_cuda_kernel<scalar_t><<<blocks, threads>>>(
         rays_o_p,
@@ -145,17 +133,7 @@ __global__ void infer_n_samples_cuda_kernel(
     const int threads = 512;
     const int blocks = (n_rays + threads - 1) / threads;
     
-    /*
-    AT_DISPATCH_FLOATING_TYPES(t_min.type(), "infer_n_samples_cuda", ([&] {
-        infer_n_samples_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            rays_d.data<scalar_t>(),
-            t_min.data<scalar_t>(),
-            t_max.data<scalar_t>(),
-            stepdist,
-            n_rays,
-            n_samples.data<int64_t>());
-    }));
-    */
+
     
     infer_n_samples_cuda_kernel<scalar_t><<<blocks, threads>>>(
         rays_d_p,
@@ -229,19 +207,7 @@ __global__ void infer_ray_start_dir_cuda_kernel(
     cudaMemsetAsync(out0_p, 0, out0->size);
     cudaMemsetAsync(out1_p, 0, out1->size);
 
-    /*
-    AT_DISPATCH_FLOATING_TYPES(rays_o.type(), "infer_ray_start_dir_cuda", ([&] {
-        infer_ray_start_dir_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            rays_o.data<scalar_t>(),
-            rays_d.data<scalar_t>(),
-            t_min.data<scalar_t>(),
-            n_rays,
-            rays_start.data<scalar_t>(),
-            rays_dir.data<scalar_t>());
-    }));
-
-    */
-    
+ 
     infer_ray_start_dir_cuda_kernel<scalar_t><<<blocks, threads>>>(
         rays_o_p,
         rays_d_p,
@@ -259,8 +225,8 @@ __global__ void infer_ray_start_dir_cuda_kernel(
 
 def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     
-    assert(rays_o.dim()==2);
-    assert(rays_o.size(1)==3);
+    assert(len(rays_o.shape)==2)
+    assert(rays_o.size(1)==3)
     
     t_min,t_max = infer_t_minmax(rays_o, rays_d, xyz_min, xyz_max, near, far)
     
@@ -451,21 +417,11 @@ __global__ void maskcache_lookup_cuda_kernel(
     const int sz_k = world_shape2;
     const int n_pts = xyz_shape0;
     
-    if(n_pts!=0) {
+    if(n_pts!=0) {{
       const int threads = 512;
       const int blocks = (n_pts + threads - 1) / threads;
 
-      /*
-      AT_DISPATCH_FLOATING_TYPES(xyz.type(), "maskcache_lookup_cuda", ([&] {
-        maskcache_lookup_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            world.data<bool>(),
-            xyz.data<scalar_t>(),
-            out.data<bool>(),
-            xyz2ijk_scale.data<scalar_t>(),
-            xyz2ijk_shift.data<scalar_t>(),
-            sz_i, sz_j, sz_k, n_pts);
-      }));
-      */
+
       
       
       maskcache_lookup_cuda_kernel<scalar_t><<<blocks, threads>>>(
@@ -476,7 +432,7 @@ __global__ void maskcache_lookup_cuda_kernel(
         xyz2ijk_shift_p,
         sz_i, sz_j, sz_k, n_pts);
         
-    }    
+    }}    
     
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
@@ -530,19 +486,11 @@ __global__ void raw2alpha_cuda_kernel(
   cudaMemsetAsync(out0_p, 0, out0->size);
   cudaMemsetAsync(out1_p, 0, out1->size);
   
-  if(n_pts!=0) {
+  if(n_pts!=0) {{ 
     const int threads = 512;
     const int blocks = (n_pts + threads - 1) / threads;
     
-    /*
-    AT_DISPATCH_FLOATING_TYPES(density.type(), "raw2alpha_cuda", ([&] {
-      raw2alpha_cuda_kernel<scalar_t><<<blocks, threads>>>(
-          density.data<scalar_t>(),
-          shift, interval, n_pts,
-          exp_d.data<scalar_t>(),
-          alpha.data<scalar_t>());
-    }));
-    */
+
     
     raw2alpha_cuda_kernel<scalar_t><<<blocks, threads>>>(
       density_p,
@@ -550,7 +498,7 @@ __global__ void raw2alpha_cuda_kernel(
       exp_d_p,
       alpha_p);
     
-  }
+  }}
   
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) 
@@ -598,26 +546,18 @@ __global__ void raw2alpha_backward_cuda_kernel(
     const int n_pts = exp_d_shape0;
     cudaMemsetAsync(out0_p, 0, out0->size);
     
-    if(n_pts!=0) {
+    if(n_pts!=0) {{
         const int threads = 512;
         const int blocks = (n_pts + threads - 1) / threads;
         
-        /*
-        AT_DISPATCH_FLOATING_TYPES(exp_d.type(), "raw2alpha_backward_cuda", ([&] {
-          raw2alpha_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
-              exp_d.data<scalar_t>(),
-              grad_back.data<scalar_t>(),
-              interval, n_pts,
-              grad.data<scalar_t>());
-        }));
-        */
+   
 
         raw2alpha_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
           exp_d_p,
           grad_back_p,
           {interval}, n_pts,
           grad_p);
-    }
+    }}
         
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
@@ -667,27 +607,15 @@ __global__ void raw2alpha_nonuni_cuda_kernel(
     cudaMemsetAsync(out0_p, 0, out0->size);
     cudaMemsetAsync(out1_p, 0, out1->size);
 
-    if(n_pts != 0) {
+    if(n_pts != 0) {{
         const int threads = 256;
         const int blocks = (n_pts + threads - 1) / threads;
-        
-        /*
-        AT_DISPATCH_FLOATING_TYPES(density.type(), "raw2alpha_cuda", ([&] {
-          raw2alpha_nonuni_cuda_kernel<scalar_t><<<blocks, threads>>>(
-              density.data<scalar_t>(),
-              shift, interval.data<scalar_t>(), n_pts,
-              exp_d.data<scalar_t>(),
-              alpha.data<scalar_t>());
-        })); 
-        
-        */
-        
         raw2alpha_nonuni_cuda_kernel<scalar_t><<<blocks, threads>>>(
             density_p,
             {shift}, interval_p, n_pts,
             exp_d_p,
             alpha_p);
-    }  
+    }}  
     
     
     cudaError_t err = cudaGetLastError();
@@ -735,27 +663,16 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     const int n_pts = exp_d_shape0;
     cudaMemsetAsync(out0_p, 0, out0->size);
 
-    if(n_pts != 0) {
+    if(n_pts != 0) {{
         const int threads = 256;
         const int blocks = (n_pts + threads - 1) / threads;
-
-        /*
-        AT_DISPATCH_FLOATING_TYPES(exp_d.type(), "raw2alpha_backward_cuda", ([&] {
-          raw2alpha_nonuni_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
-              exp_d.data<scalar_t>(),
-              grad_back.data<scalar_t>(),
-              interval.data<scalar_t>(), n_pts,
-              grad.data<scalar_t>());
-        }));
-        */
-        
         raw2alpha_nonuni_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
           exp_d_p,
           grad_back_p,
           interval_p, n_pts,
           grad_p);
         
-    } 
+    }}
         
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 

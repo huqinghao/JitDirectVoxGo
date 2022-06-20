@@ -18,6 +18,7 @@ from jittor import Function
 from . import grid
 
 #TODO: utils
+from lib.jit_cuda import render_utils
 # from jt.utils.cpp_extension import load
 # parent_dir = os.path.dirname(os.path.abspath(__file__))
 # render_utils_cuda = load(
@@ -295,7 +296,7 @@ class DirectVoxGO(jt.nn.Module):
     def activate_density(self, density, interval=None):
         interval = interval if interval is not None else self.voxel_size_ratio
         shape = density.shape
-        return raw2alpha(density.flattne(),self.act_shift,interval).reshape(shape)
+        return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
         # return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
 
     def hit_coarse_geo(self, rays_o, rays_d, near, far, stepsize, **render_kwargs):
@@ -310,13 +311,15 @@ class DirectVoxGO(jt.nn.Module):
         rays_d = rays_d.reshape(-1, 3)
         stepdist = stepsize * self.voxel_size
         #TODO: not implemented
+        
+        ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
+                rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
 
-        # ray_pts, mask_outbbox, ray_id = render_utils_cuda.sample_pts_on_rays(
-        #         rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
-        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
-                                            jt.Var(np.load("mask_outbbox.npy")),\
-                                            jt.Var(np.load("ray_id.npy")),\
-                                            jt.Var(np.load("step_id.npy"))
+        # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+        #                                     jt.Var(np.load("mask_outbbox.npy")),\
+        #                                     jt.Var(np.load("ray_id.npy")),\
+        #                                     jt.Var(np.load("step_id.npy"))
+        #TODO: ~ op not supported
         #mask_inbbox = ~mask_outbbox
         mask_inbbox = (mask_outbbox==False)
         hit = jt.zeros([len(rays_o)], dtype=jt.bool)
@@ -342,12 +345,12 @@ class DirectVoxGO(jt.nn.Module):
         #rays_d = rays_d.contiguous()
         stepdist = stepsize * self.voxel_size
         #TODO: render_utils_cuda.sample_pts_on_rays not implemeted:
-        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
-                                            jt.Var(np.load("mask_outbbox.npy")),\
-                                            jt.Var(np.load("ray_id.npy")),\
-                                            jt.Var(np.load("step_id.npy"))
-        # ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils_cuda.sample_pts_on_rays(
-        #     rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
+        # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+        #                                     jt.Var(np.load("mask_outbbox.npy")),\
+        #                                     jt.Var(np.load("ray_id.npy")),\
+        #                                     jt.Var(np.load("step_id.npy"))
+        ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils.sample_pts_on_rays(
+            rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
         #TODO:
         # bad operand type for unary ~: 'jittor_core.Var'
         # ~ op not supported
