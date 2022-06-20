@@ -437,7 +437,6 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             model.act_shift -= cfg_train.decay_after_scale
             #TODO: 
             # jt.cuda.empty_cache()
-
         # random sample rays
         if cfg_train.ray_sampler in ['flatten', 'in_maskcache']:
             sel_i = batch_index_sampler()
