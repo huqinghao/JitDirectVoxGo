@@ -678,7 +678,7 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     
     
     
-def rgb_marched(alpha, ray_id, n_rays):
+def alpha2weight(alpha, ray_id, n_rays):
     assert(alpha.ndim==1)
     assert(ray_id.ndim==1)
     assert(alpha.numel()==ray_id.numel())
@@ -695,7 +695,7 @@ def rgb_marched(alpha, ray_id, n_rays):
     if (n_pts== 0):
           return weight,T,alphainv_last,i_start,i_end
     
-    jt.code([],[],[ray_id,i_start,i_end],cuda_header='''
+    jt.code([i_start.shape,i_end.shape],[i_start.dtype,i_end.dtype],[ray_id,i_start,i_end],cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -737,7 +737,7 @@ __global__ void __set_i_for_segment_start_end(
     
     
     
-    jt.code([(1,)],[jt.float32],[alpha,weight,T,alphainv_last,i_start,i_end],
+    jt.code([(1,)],[jt.float],[alpha,weight,T,alphainv_last,i_start,i_end],
     cuda_header='''
 
 #include <cuda.h>
