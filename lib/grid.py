@@ -60,7 +60,10 @@ class DenseGrid(nn.Module):
         shape = xyz.shape[:-1]
         xyz_ = xyz.reshape(1,1,1,-1,3)
         ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
-        out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+        # TODO
+        # nn.grid_sample too slow 
+        #out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+        out= jt.Var(np.load("dense_grid.npy"))
         out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)
         if self.channels == 1:
             out = out.squeeze(-1)

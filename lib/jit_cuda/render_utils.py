@@ -695,20 +695,21 @@ def alpha2weight(alpha, ray_id, n_rays):
     if (n_pts== 0):
           return weight,T,alphainv_last,i_start,i_end
     
-    jt.code([i_start.shape,i_end.shape],[i_start.dtype,i_end.dtype],[ray_id,i_start,i_end],cuda_header='''
+    jt.code(inputs=[ray_id,i_start,i_end],outputs=[ray_id,i_start,i_end],cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
-
+#include <iostream>
 #include <vector>
 
+using  jittor::int64;
 namespace{
 
 __global__ void __set_i_for_segment_start_end(
-    int64_t* __restrict__ ray_id,
+    int64* __restrict__ ray_id,
     const int n_pts,
-    int64_t* __restrict__ i_start,
-    int64_t* __restrict__ i_end) {
+    int64* __restrict__ i_start,
+    int64* __restrict__ i_end) {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if(0<index && index<n_pts && ray_id[index]!=ray_id[index-1]) {
     i_start[ray_id[index]] = index;
@@ -727,7 +728,7 @@ __global__ void __set_i_for_segment_start_end(
     __set_i_for_segment_start_end<<<({n_pts}+{threads}-1)/{threads}, {threads}>>>(
           ray_id_p, {n_pts}, i_start_p, i_end_p);
     i_end_p[ray_id_p[{n_pts}-1]] = {n_pts};
-
+    cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
         printf("Error in __set_i_for_segment_start_end: %s\\n", cudaGetErrorString(err));
     
@@ -737,13 +738,15 @@ __global__ void __set_i_for_segment_start_end(
     
     
     
-    jt.code([(1,)],[jt.float],[alpha,weight,T,alphainv_last,i_start,i_end],
+    jt.code(inputs=[alpha,weight,T,alphainv_last,i_start,i_end],outputs=[alpha,weight,T,alphainv_last,i_start,i_end],
     cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <vector>
+#include <iostream>
+using  jittor::int64;
 
 namespace{
 
@@ -754,8 +757,8 @@ __global__ void alpha2weight_cuda_kernel(
     scalar_t* __restrict__ weight,
     scalar_t* __restrict__ T,
     scalar_t* __restrict__ alphainv_last,
-    int64_t* __restrict__ i_start,
-    int64_t* __restrict__ i_end) {
+    int64* __restrict__ i_start,
+    int64* __restrict__ i_end) {
 
   const int i_ray = blockIdx.x * blockDim.x + threadIdx.x;
   if(i_ray<n_rays) {
