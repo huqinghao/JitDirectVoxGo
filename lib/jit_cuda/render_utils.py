@@ -86,13 +86,15 @@ def infer_n_samples(
     t_min,
     t_max,
     stepdist):
-    return jt.code(t_min.size(0),"int64",[rays_d, t_min, t_max],
+    return jt.code((t_min.size(0),),jt.int64,[rays_d, t_min, t_max],
     cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-
+#include <iostream>
 #include <vector>
+
+using jittor::int64;
 
 namespace{
 
@@ -103,7 +105,7 @@ __global__ void infer_n_samples_cuda_kernel(
         scalar_t* __restrict__ t_max,
         const float stepdist,
         const int n_rays,
-        int64_t* __restrict__ n_samples) {
+        int64* __restrict__ n_samples) {
   const int i_ray = blockIdx.x * blockDim.x + threadIdx.x;
   if(i_ray<n_rays) {
     const int offset = i_ray * 3;
@@ -129,14 +131,14 @@ __global__ void infer_n_samples_cuda_kernel(
     cudaMemsetAsync(out0_p, 0, out0->size);
     const int threads = 512;
     const int blocks = (n_rays + threads - 1) / threads;
-    
+    const float step_dist = {stepdist};
 
     
     infer_n_samples_cuda_kernel<float32><<<blocks, threads>>>(
         rays_d_p,
         t_min_p,
         t_max_p,
-        {stepdist},
+        step_dist,
         n_rays,
         n_samples_p);
     
@@ -236,23 +238,25 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     
     N_steps_cumsum = jt.cumsum(N_steps,0) # 211 TODO check
     
-    total_len = N_steps.sum().item().int() # 212 TODO check
+    total_len = int(N_steps.data.sum().item()) # 212 TODO check
     
     ray_id = jt.zeros((total_len),dtype="int64")
     
     # __set_1_at_ray_seg_start
-    jt.code((1,),"float32", [ray_id,N_steps_cumsum], cuda_header='''
+    # jt.code((1,),"float32", [ray_id,N_steps_cumsum], cuda_header='''
+    jt.code([],[ray_id,N_steps_cumsum], cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
-
+#include <iostream>
 #include <vector>
 
+using jittor::int64;
 namespace{     
 
 __global__ void __set_1_at_ray_seg_start(
-        int64_t* __restrict__ ray_id,
-        int64_t* __restrict__ N_steps_cumsum,
+        int64* __restrict__ ray_id,
+        int64* __restrict__ N_steps_cumsum,
         const int n_rays) {
   const int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if(0<idx && idx<n_rays) {
@@ -263,11 +267,8 @@ __global__ void __set_1_at_ray_seg_start(
 }
     ''', 
     cuda_src=f'''
-    @alias(ray_id, in0)
-    @alias(N_steps_cumsum, in1)
-    @alias(place_holder, out0)
-
-    cudaMemsetAsync(out0_p, 0, out0->size);
+    @alias(ray_id, out0)
+    @alias(N_steps_cumsum, out1)
     
     __set_1_at_ray_seg_start<<<({n_rays}+{threads}-1)/{threads}, {threads}>>>(
       ray_id_p, N_steps_cumsum_p, {n_rays});
@@ -280,22 +281,24 @@ __global__ void __set_1_at_ray_seg_start(
     
     ray_id = jt.cumsum(ray_id,0)
 
-    step_id = jt.empty((total_len),dtype=ray_id.dtype)
+    step_id = jt.empty((total_len,),dtype=ray_id.dtype)
     
     # __set_step_id
     jt.code((1,),"float32", [step_id, ray_id, N_steps_cumsum], cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
-
+#include <iostream>
 #include <vector>
+
+using jittor::int64
 
 namespace{     
 
 __global__ void __set_step_id(
-        int64_t* __restrict__ step_id,
-        int64_t* __restrict__ ray_id,
-        int64_t* __restrict__ N_steps_cumsum,
+        int64* __restrict__ step_id,
+        int64* __restrict__ ray_id,
+        int64* __restrict__ N_steps_cumsum,
         const int total_len) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx<total_len) {
@@ -327,10 +330,10 @@ __global__ void __set_step_id(
     
     rays_pts = jt.empty((total_len,3),rays_o.dtype)
     
-    mask_outbbox = jt.empty((total_len), dtype='bool')
+    mask_outbbox = jt.empty((total_len,), dtype='bool')
     
     
-    rays_pts,mask_outbbox = jt.code((1,),"float32",[rays_start, rays_dir, xyz_min, xyz_max, ray_id, step_id, rays_pts, mask_outbbox],
+    jt.code((1,),"float32",[rays_start, rays_dir, xyz_min, xyz_max, ray_id, step_id, rays_pts, mask_outbbox],
     cuda_header='''
     
 #include <cuda.h>
@@ -350,8 +353,8 @@ __global__ void sample_pts_on_rays_cuda_kernel(
         scalar_t* __restrict__ rays_dir,
         scalar_t* __restrict__ xyz_min,
         scalar_t* __restrict__ xyz_max,
-        int64_t* __restrict__ ray_id,
-        int64_t* __restrict__ step_id,
+        int64* __restrict__ ray_id,
+        int64* __restrict__ step_id,
         const float stepdist, const int total_len,
         scalar_t* __restrict__ rays_pts,
         bool* __restrict__ mask_outbbox) {
@@ -415,7 +418,7 @@ def maskcache_lookup(world, xyz, xyz2ijk_scale, xyz2ijk_shift):
     assert(xyz.ndim==2)
     assert(xyz.size(1)==3)
     
-    return jt.code(xyz.size(0),world.dtype,[world,xyz,xyz2ijk_scale, xyz2ijk_shift],
+    return jt.code((xyz.size(0),),world.dtype,[world,xyz,xyz2ijk_scale, xyz2ijk_shift],
     cuda_header='''
 
 #include <cuda.h>
@@ -896,8 +899,8 @@ __global__ void alpha2weight_backward_cuda_kernel(
     scalar_t* __restrict__ weight,
     scalar_t* __restrict__ T,
     scalar_t* __restrict__ alphainv_last,
-    int64_t* __restrict__ i_start,
-    int64_t* __restrict__ i_end,
+    int64* __restrict__ i_start,
+    int64* __restrict__ i_end,
     const int n_rays,
     scalar_t* __restrict__ grad_weights,
     scalar_t* __restrict__ grad_last,
@@ -937,8 +940,8 @@ __global__ void alpha2weight_backward_cuda_kernel(
         weight_p,
         T_p,
         alphainv_last_p,
-        i_start.data<int64_t>(),
-        i_end.data<int64_t>(),
+        i_start_p,
+        i_end_p,
         {n_rays},
         grad_weights_p,
         grad_last_p,
