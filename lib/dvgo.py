@@ -296,8 +296,10 @@ class DirectVoxGO(jt.nn.Module):
     def activate_density(self, density, interval=None):
         interval = interval if interval is not None else self.voxel_size_ratio
         shape = density.shape
-        return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
-        # return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
+        return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
+        #debug
+        #return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
+        
 
     def hit_coarse_geo(self, rays_o, rays_d, near, far, stepsize, **render_kwargs):
         '''Check whether the rays hit the solved coarse geometry or not'''
@@ -312,13 +314,13 @@ class DirectVoxGO(jt.nn.Module):
         stepdist = stepsize * self.voxel_size
         #TODO: not implemented
         
-        ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
-                rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
+        # ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
+        #         rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
 
-        # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
-        #                                     jt.Var(np.load("mask_outbbox.npy")),\
-        #                                     jt.Var(np.load("ray_id.npy")),\
-        #                                     jt.Var(np.load("step_id.npy"))
+        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+                                            jt.Var(np.load("mask_outbbox.npy")),\
+                                            jt.Var(np.load("ray_id.npy")),\
+                                            jt.Var(np.load("step_id.npy"))
         #TODO: ~ op not supported
         #mask_inbbox = ~mask_outbbox
         mask_inbbox = (mask_outbbox==False)
@@ -345,12 +347,12 @@ class DirectVoxGO(jt.nn.Module):
         #rays_d = rays_d.contiguous()
         stepdist = stepsize * self.voxel_size
         #TODO: render_utils_cuda.sample_pts_on_rays not implemeted:
-        # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
-        #                                     jt.Var(np.load("mask_outbbox.npy")),\
-        #                                     jt.Var(np.load("ray_id.npy")),\
-        #                                     jt.Var(np.load("step_id.npy"))
-        ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils.sample_pts_on_rays(
-            rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
+        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+                                            jt.Var(np.load("mask_outbbox.npy")),\
+                                            jt.Var(np.load("ray_id.npy")),\
+                                            jt.Var(np.load("step_id.npy"))
+        # ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils.sample_pts_on_rays(
+        #     rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
         #TODO:
         # bad operand type for unary ~: 'jittor_core.Var'
         # ~ op not supported
@@ -478,7 +480,7 @@ class Raw2Alpha(Function):
               = 1 - exp(log(1 + exp(density + shift)) ^ (-interval))
               = 1 - (1 + exp(density + shift)) ^ (-interval)
         '''
-        exp, alpha = render_utils_cuda.raw2alpha(density, shift, interval)
+        exp, alpha = render_utils.raw2alpha(density, shift, interval)
         if density.requires_grad:
             self.exp=exp
             self.interval = interval
@@ -491,11 +493,11 @@ class Raw2Alpha(Function):
         exp = self.exp
         interval = self.interval
         #return render_utils_cuda.raw2alpha_backward(exp, grad_back.contiguous(), interval), None, None
-        return render_utils_cuda.raw2alpha_backward(exp, grad_back, interval), None, None
+        return render_utils.raw2alpha_backward(exp, grad_back, interval), None, None
 
 class Raw2Alpha_nonuni(Function):
     def execute(self, density, shift, interval):
-        exp, alpha = render_utils_cuda.raw2alpha_nonuni(density, shift, interval)
+        exp, alpha = render_utils.raw2alpha_nonuni(density, shift, interval)
         if density.requires_grad:
             self.exp=exp
             self.interval = interval
@@ -504,11 +506,11 @@ class Raw2Alpha_nonuni(Function):
         exp = self.exp
         interval = self.interval
         # return render_utils_cuda.raw2alpha_nonuni_backward(exp, grad_back.contiguous(), interval), None, None
-        return render_utils_cuda.raw2alpha_nonuni_backward(exp, grad_back, interval), None, None
+        return render_utils.raw2alpha_nonuni_backward(exp, grad_back, interval), None, None
 
 class Alphas2Weights(Function):
     def execute(self, alpha, ray_id, N):
-        weights, T, alphainv_last, i_start, i_end = render_utils_cuda.alpha2weight(alpha, ray_id, N)
+        weights, T, alphainv_last, i_start, i_end = render_utils.alpha2weight(alpha, ray_id, N)
         if alpha.requires_grad:
             self.alpha, self.weights, self.T, self.alphainv_last, self.i_start, self.i_end\
             =alpha, weights, T, alphainv_last, i_start, i_end
@@ -517,7 +519,7 @@ class Alphas2Weights(Function):
     def grad(self, grad_weights, grad_last):
         alpha, weights, T, alphainv_last, i_start, i_end =\
             self.alpha, self.weights, self.T, self.alphainv_last, self.i_start, self.i_end
-        grad = render_utils_cuda.alpha2weight_backward(
+        grad = render_utils.alpha2weight_backward(
                 alpha, weights, T, alphainv_last,
                 i_start, i_end, self.n_rays, grad_weights, grad_last)
         return grad, None, None

@@ -351,8 +351,8 @@ __global__ void sample_pts_on_rays_cuda_kernel(
     # return rays_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max
     
 def maskcache_lookup(world, xyz, xyz2ijk_scale, xyz2ijk_shift):
-    assert(world.dim()==3)
-    assert(xyz.dim()==2)
+    assert(world.ndim==3)
+    assert(xyz.ndim==2)
     assert(xyz.size(1)==3)
     
     return jt.code(xyz.size(0),world.dtype,[world,xyz,xyz2ijk_scale, xyz2ijk_shift],
@@ -445,7 +445,7 @@ def raw2alpha(
     density, 
     shift, 
     interval):
-    assert(density.dim()==1)
+    assert(density.ndim==1)
     return jt.code([density.shape,density.shape],[density.dtype,density.dtype],[density],
     cuda_header='''
 
@@ -567,7 +567,7 @@ __global__ void raw2alpha_backward_cuda_kernel(
     
     
 def raw2alpha_nonuni(density, shift, interval):
-    assert(density.dim()==1)
+    assert(density.ndim==1)
     return jt.code([density.shape,density.shape],[density.dtype,density.dtype],[density,interval],
     cuda_header='''
 
@@ -682,8 +682,8 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     
     
 def raw2alpha_nonuni(alpha, ray_id, n_rays):
-    assert(alpha.dim()==1)
-    assert(ray_id.dim()==1)
+    assert(alpha.ndim==1)
+    assert(ray_id.ndim==1)
     assert(alpha.sizes()==ray_id.sizes())
     
     n_pts = alpha.size(0)
