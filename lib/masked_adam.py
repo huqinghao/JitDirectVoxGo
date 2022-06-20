@@ -11,7 +11,7 @@ from jittor import nn
 #         sources=[os.path.join(parent_dir, path) for path in sources],
 #         verbose=True)
 
-
+from .jit_cuda import adam_upd
 ''' Extend Adam optimizer
 1. support per-voxel learning rate
 2. masked update (ignore zero grad) which speeduping training
@@ -65,15 +65,16 @@ class MaskedAdam(jt.optim.Adam):
                     state['step'] += 1
                     #TODO: grad
                     if self.per_lr is not None and param.shape == self.per_lr.shape:
-                        adam_upd_cuda.adam_upd_with_perlr(
+                        adam_upd.adam_upd_with_perlr(
                                 param, param.grad, state['exp_avg'], state['exp_avg_sq'], self.per_lr,
                                 state['step'], beta1, beta2, lr, eps)
                     elif skip_zero_grad:
-                        adam_upd_cuda.masked_adam_upd(
+                        #TODO:
+                        adam_upd.masked_adam_upd(
                                 param, param.grad, state['exp_avg'], state['exp_avg_sq'],
                                 state['step'], beta1, beta2, lr, eps)
                     else:
-                        adam_upd_cuda.adam_upd(
+                        adam_upd.adam_upd(
                                 param, param.grad, state['exp_avg'], state['exp_avg_sq'],
                                 state['step'], beta1, beta2, lr, eps)
 

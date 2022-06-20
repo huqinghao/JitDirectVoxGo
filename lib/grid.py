@@ -48,7 +48,7 @@ class DenseGrid(nn.Module):
         # self.register_buffer('xyz_min', jt.Tensor(xyz_min))
         # self.register_buffer('xyz_max', jt.Tensor(xyz_max))
         self.xyz_min=jt.array(xyz_min.copy()).stop_grad()
-        self.xyz_max=jt.array(xyz_min.copy()).stop_grad()
+        self.xyz_max=jt.array(xyz_max.copy()).stop_grad()
         # self.grid = (jt.zeros([1, channels, *world_size]))
         #TODO: jittor *Var
         self.grid =jt.zeros([1, channels, *world_size.tolist()])

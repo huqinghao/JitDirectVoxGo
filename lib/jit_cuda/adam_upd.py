@@ -51,17 +51,6 @@ __global__ void adam_upd_cuda_kernel(
 
     const float step_size = {lr} * sqrt(1 - pow({beta2}, (float){step})) / (1 - pow({beta1}, (float){step}));
 
-    /*
-    AT_DISPATCH_FLOATING_TYPES(param.type(), "adam_upd_cuda", ([&] {
-        adam_upd_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            param.data<scalar_t>(),
-            grad.data<scalar_t>(),
-            exp_avg.data<scalar_t>(),
-            exp_avg_sq.data<scalar_t>(),
-            N, step_size, beta1, beta2, eps);
-    }));
-    */
-
     adam_upd_cuda_kernel<float32><<<blocks, threads>>>(
         param_p,
         grad_p,
@@ -126,16 +115,7 @@ __global__ void masked_adam_upd_cuda_kernel(
 
     const float step_size = {lr} * sqrt(1 - pow({beta2}, (float){step})) / (1 - pow({beta1}, (float){step}));
 
-    /*
-    AT_DISPATCH_FLOATING_TYPES(param.type(), "masked_adam_upd_cuda", ([&] {
-        masked_adam_upd_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            param.data<scalar_t>(),
-            grad.data<scalar_t>(),
-            exp_avg.data<scalar_t>(),
-            exp_avg_sq.data<scalar_t>(),
-            N, step_size, beta1, beta2, eps);
-    }));
-    */
+
 
     masked_adam_upd_cuda_kernel<float32><<<blocks, threads>>>(
         param_p,
@@ -203,17 +183,6 @@ __global__ void adam_upd_with_perlr_cuda_kernel(
 
     const float step_size = {lr} * sqrt(1 - pow({beta2}, (float){step})) / (1 - pow({beta1}, (float){step}));
 
-    /*
-    AT_DISPATCH_FLOATING_TYPES(param.type(), "adam_upd_with_perlr_cuda", ([&] {
-        adam_upd_with_perlr_cuda_kernel<scalar_t><<<blocks, threads>>>(
-            param.data<scalar_t>(),
-            grad.data<scalar_t>(),
-            exp_avg.data<scalar_t>(),
-            exp_avg_sq.data<scalar_t>(),
-            perlr.data<scalar_t>(),
-            N, step_size, beta1, beta2, eps);
-    }));
-    */
     
     adam_upd_with_perlr_cuda_kernel<float32><<<blocks, threads>>>(
         param_p,

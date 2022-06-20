@@ -8,8 +8,6 @@ def infer_t_minmax(
     near,
     far,
     ):
-    # init output
-    # TODO
     
     t_min,t_max=jt.code([(rays_o.size(0),),(rays_o.size(0),)],[rays_o.dtype,rays_o.dtype],[rays_o,rays_d,xyz_min,xyz_max],
     cuda_header='''
@@ -134,7 +132,7 @@ __global__ void infer_n_samples_cuda_kernel(
     
 
     
-    infer_n_samples_cuda_kernel<scalar_t><<<blocks, threads>>>(
+    infer_n_samples_cuda_kernel<float32><<<blocks, threads>>>(
         rays_d_p,
         t_min_p,
         t_max_p,
@@ -207,7 +205,7 @@ __global__ void infer_ray_start_dir_cuda_kernel(
     cudaMemsetAsync(out1_p, 0, out1->size);
 
  
-    infer_ray_start_dir_cuda_kernel<scalar_t><<<blocks, threads>>>(
+    infer_ray_start_dir_cuda_kernel<float32><<<blocks, threads>>>(
         rays_o_p,
         rays_d_p,
         t_min_p,
@@ -423,7 +421,7 @@ __global__ void maskcache_lookup_cuda_kernel(
 
       
       
-      maskcache_lookup_cuda_kernel<scalar_t><<<blocks, threads>>>(
+      maskcache_lookup_cuda_kernel<float32><<<blocks, threads>>>(
         world_p,
         xyz_p,
         maskcache_p,
@@ -491,7 +489,7 @@ __global__ void raw2alpha_cuda_kernel(
     
 
     
-    raw2alpha_cuda_kernel<scalar_t><<<blocks, threads>>>(
+    raw2alpha_cuda_kernel<float32><<<blocks, threads>>>(
       density_p,
       {shift}, {interval}, n_pts,
       exp_d_p,
@@ -551,7 +549,7 @@ __global__ void raw2alpha_backward_cuda_kernel(
         
    
 
-        raw2alpha_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
+        raw2alpha_backward_cuda_kernel<float32><<<blocks, threads>>>(
           exp_d_p,
           grad_back_p,
           {interval}, n_pts,
@@ -609,7 +607,7 @@ __global__ void raw2alpha_nonuni_cuda_kernel(
     if(n_pts != 0) {{
         const int threads = 256;
         const int blocks = (n_pts + threads - 1) / threads;
-        raw2alpha_nonuni_cuda_kernel<scalar_t><<<blocks, threads>>>(
+        raw2alpha_nonuni_cuda_kernel<float32><<<blocks, threads>>>(
             density_p,
             {shift}, interval_p, n_pts,
             exp_d_p,
@@ -665,7 +663,7 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     if(n_pts != 0) {{
         const int threads = 256;
         const int blocks = (n_pts + threads - 1) / threads;
-        raw2alpha_nonuni_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
+        raw2alpha_nonuni_backward_cuda_kernel<float32><<<blocks, threads>>>(
           exp_d_p,
           grad_back_p,
           interval_p, n_pts,
@@ -680,10 +678,10 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     
     
     
-def raw2alpha_nonuni(alpha, ray_id, n_rays):
+def rgb_marched(alpha, ray_id, n_rays):
     assert(alpha.ndim==1)
     assert(ray_id.ndim==1)
-    assert(alpha.sizes()==ray_id.sizes())
+    assert(alpha.numel()==ray_id.numel())
     
     n_pts = alpha.size(0)
     threads = 512
@@ -739,7 +737,7 @@ __global__ void __set_i_for_segment_start_end(
     
     
     
-    jt.code([],[],[alpha,weight,T,alphainv_last,i_start,i_end],
+    jt.code([(1,)],[jt.float32],[alpha,weight,T,alphainv_last,i_start,i_end],
     cuda_header='''
 
 #include <cuda.h>
@@ -792,7 +790,7 @@ __global__ void alpha2weight_cuda_kernel(
     
     const int blocks = ({n_rays} + {threads} - 1) / {threads};
     
-    alpha2weight_cuda_kernel<scalar_t><<<blocks, threads>>>(
+    alpha2weight_cuda_kernel<float32><<<blocks, threads>>>(
         alpha_p,
         {n_rays},
         weight_p,
@@ -827,19 +825,30 @@ def alpha2weight_backward(
 namespace{
 
 template <typename scalar_t>
-__global__ void raw2alpha_nonuni_backward_cuda_kernel(
-    scalar_t* __restrict__ exp_d,
-    scalar_t* __restrict__ grad_back,
-    scalar_t* __restrict__ interval, const int n_pts,
+__global__ void alpha2weight_backward_cuda_kernel(
+    scalar_t* __restrict__ alpha,
+    scalar_t* __restrict__ weight,
+    scalar_t* __restrict__ T,
+    scalar_t* __restrict__ alphainv_last,
+    int64_t* __restrict__ i_start,
+    int64_t* __restrict__ i_end,
+    const int n_rays,
+    scalar_t* __restrict__ grad_weights,
+    scalar_t* __restrict__ grad_last,
     scalar_t* __restrict__ grad) {
 
-  const int i_pt = blockIdx.x * blockDim.x + threadIdx.x;
-  if(i_pt<n_pts) {
-    grad[i_pt] = min(exp_d[i_pt], 1e10) * pow(1+exp_d[i_pt], -interval[i_pt]-1) * interval[i_pt] * grad_back[i_pt];
+  const int i_ray = blockIdx.x * blockDim.x + threadIdx.x;
+  if(i_ray<n_rays) {
+    const int i_s = i_start[i_ray];
+    const int i_e = i_end[i_ray];
+
+    float back_cum = grad_last[i_ray] * alphainv_last[i_ray];
+    for(int i=i_e-1; i>=i_s; --i) {
+      grad[i] = grad_weights[i] * T[i] - back_cum / (1-alpha[i] + 1e-10);
+      back_cum += grad_weights[i] * weight[i];
+    }
   }
 }
-
-}  
     
     
     ''',
@@ -857,7 +866,7 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     const int threads = 512;
     const int blocks = ({n_rays} + threads - 1) / threads;
     
-    alpha2weight_backward_cuda_kernel<scalar_t><<<blocks, threads>>>(
+    alpha2weight_backward_cuda_kernel<float32><<<blocks, threads>>>(
         alpha_p,
         weight_p,
         T_p,
@@ -871,5 +880,5 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
-            printf("Error in raw2alpha_nonuni: %s\\n", cudaGetErrorString(err));
+            printf("Error in alpha2weight_backward: %s\\n", cudaGetErrorString(err));
     ''')

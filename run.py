@@ -473,7 +473,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             **render_kwargs)
 
         # gradient descent step
-        optimizer.zero_grad(set_to_none=True)
+        optimizer.zero_grad()
         loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)
         psnr = utils.mse2psnr(loss.detach())
         if cfg_train.weight_entropy_last > 0:

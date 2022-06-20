@@ -415,7 +415,7 @@ class DirectVoxGO(jt.nn.Module):
             pass
         else:
             k0 = self.k0(ray_pts)
-
+        jt.sync_all()
         if self.rgbnet is None:
             # no view-depend effect
             rgb = jt.sigmoid(k0)
@@ -439,11 +439,10 @@ class DirectVoxGO(jt.nn.Module):
         # Ray marching
         #TODO: scatter --> segment_coo
         #TODO: whether it need gradient
-        rgb_marched = scatter(
+        rgb_marched = scatter(x=jt.zeros([N, 3]),dim=0,
                 src=(weights.unsqueeze(-1) * rgb),
                 index=ray_id,
-                out=jt.zeros([N, 3]),
-                reduce='sum')
+                reduce='add')
         rgb_marched += (alphainv_last.unsqueeze(-1) * render_kwargs['bg'])
         ret_dict.update({
             'alphainv_last': alphainv_last,
@@ -453,16 +452,16 @@ class DirectVoxGO(jt.nn.Module):
             'raw_rgb': rgb,
             'ray_id': ray_id,
         })
+        
 
         if render_kwargs.get('render_depth', False):
             with jt.no_grad():
                 #TODO: 
                 # scatter --> segment_coo
-                depth = scatter(
+                depth = scatter(  x=jt.zeros([N]),dim=0,
                         src=(weights * step_id),
                         index=ray_id,
-                        out=jt.zeros([N]),
-                        reduce='sum')
+                        reduce='add')
             ret_dict.update({'depth': depth})
 
         return ret_dict
