@@ -11,8 +11,7 @@ def infer_t_minmax(
     # init output
     # TODO
     
-    # return t_min,t_max
-    return jt.code([rays_o.size(0),rays_o.size(0)],[rays_o.dtype,rays_o.dtype],[rays_o,rays_d,xyz_min,xyz_max],
+    t_min,t_max=jt.code([(rays_o.size(0),),(rays_o.size(0),)],[rays_o.dtype,rays_o.dtype],[rays_o,rays_d,xyz_min,xyz_max],
     cuda_header='''
 
 #include <cuda.h>
@@ -69,7 +68,7 @@ __global__ void infer_t_minmax_cuda_kernel(
     const int blocks = (n_rays + threads - 1) / threads;
     
     
-    infer_t_minmax_cuda_kernel<scalar_t><<<blocks, threads>>>(
+    infer_t_minmax_cuda_kernel<float32><<<blocks, threads>>>(
         rays_o_p,
         rays_d_p,
         xyz_min_p,
@@ -82,7 +81,7 @@ __global__ void infer_t_minmax_cuda_kernel(
     if (err != cudaSuccess) 
             printf("Error in infer_t_minmax: %s\\n", cudaGetErrorString(err));
     ''')
-    
+    return t_min,t_max
     
 def infer_n_samples(
     rays_d,

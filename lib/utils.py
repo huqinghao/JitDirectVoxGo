@@ -71,9 +71,8 @@ to8b = lambda x : (255*np.clip(x,0,1)).astype(np.uint8)
 def create_optimizer_or_freeze_model(model, cfg_train, global_step):
     decay_steps = cfg_train.lrate_decay * 1000
     decay_factor = 0.1 ** (global_step/decay_steps)
-
+    
     param_group = []
-    nn.BatchNorm2d
     for k in cfg_train.keys():
         if not k.startswith('lrate_'):
             continue
