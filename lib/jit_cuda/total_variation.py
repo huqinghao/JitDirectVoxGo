@@ -8,7 +8,7 @@ def total_variation_add_grad(
     wz, 
     dense_mode):
     return jt.code([],[],[param, grad],
-    cuda_head='''
+    cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>

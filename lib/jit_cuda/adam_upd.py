@@ -11,7 +11,7 @@ def adam_upd(
     lr, 
     eps):
     return jt.code([],[],[param, grad, exp_avg, exp_avg_sq],
-    cuda_head='''
+    cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -86,7 +86,7 @@ def masked_adam_upd_cuda_kernel(
     lr, 
     eps):
     return jt.code([],[],[param, grad, exp_avg, exp_avg_sq],
-    cuda_head='''
+    cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -162,7 +162,7 @@ def adam_upd_with_perlr(
     lr, 
     eps):
     return jt.code([],[],[param, grad, exp_avg, exp_avg_sq, perlr],
-    cuda_head='''
+    cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
