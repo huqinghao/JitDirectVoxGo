@@ -14,6 +14,53 @@ from jittor import nn
 
 from .masked_adam import MaskedAdam
 
+def squeeze(input):
+    in_shape = input.shape
+    start_dim = 0
+    end_dim = len(in_shape)
+    out_shape = []
+    for i in range(start_dim, end_dim, 1):
+        if in_shape[i]!=1:
+            out_shape.append(in_shape[i])
+    return input.reshape(out_shape)
+
+def randint(high, shape=(1,), dtype="int32"):
+    ''' samples random integers from a uniform distribution on the interval [low, high).
+
+    :param high: One above the highest integer to be drawn from the distribution.
+    :type high: int
+        
+    :param shape: shape of the output size, defaults to (1,).
+    :type shape: tuple, optional
+        
+    :param dtype: data type of the output, defaults to "int32".
+    :type dtype: str, optional
+
+    Example:
+        
+        >>> jt.randint(3, shape=(3, 3))
+        jt.Var([[2 0 2]
+         [2 1 2]
+         [2 0 1]], dtype=int32)
+        >>> jt.randint(1, 3, shape=(3, 3))
+        jt.Var([[2 2 2]
+         [1 1 2]
+         [1 1 1]], dtype=int32)
+    '''
+    low=0
+    v = (jt.random(shape) * (high - low) + low).clamp(low, high-0.5)
+    v = jt.floor_int(v)
+    return v.astype(dtype)
+def filter_parameters(parameters):
+    '''
+    only Vars with require_grad=True are returned
+    '''
+    params=[]
+    for p in parameters:
+        if p.requires_grad:
+            params.append(p)
+    return params
+
 def log10(x):
     return jt.log(x)/math.log(10.0)
 ''' Misc
@@ -26,6 +73,7 @@ def create_optimizer_or_freeze_model(model, cfg_train, global_step):
     decay_factor = 0.1 ** (global_step/decay_steps)
 
     param_group = []
+    nn.BatchNorm2d
     for k in cfg_train.keys():
         if not k.startswith('lrate_'):
             continue
@@ -43,7 +91,9 @@ def create_optimizer_or_freeze_model(model, cfg_train, global_step):
         if lr > 0:
             print(f'create_optimizer_or_freeze_model: param {k} lr {lr}')
             if isinstance(param, nn.Module):
-                param = param.parameters()
+                #TODO: nn.Module.parameters() return all vars including those Vars with requires_grad=False
+                #To match with pytorch, filter out those buffer vars
+                param = filter_parameters(param.parameters())
             param_group.append({'params': param, 'lr': lr, 'skip_zero_grad': (k in cfg_train.skip_zero_grad_fields)})
         else:
             print(f'create_optimizer_or_freeze_model: param {k} freeze')

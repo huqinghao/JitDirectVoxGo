@@ -8,32 +8,57 @@ import json
 import cv2
 
 
-trans_t = lambda t : jt.float32([
+# trans_t = lambda t : jt.float32([
+#     [1,0,0,0],
+#     [0,1,0,0],
+#     [0,0,1,t],
+#     [0,0,0,1]]).stop_grad()
+
+# rot_phi = lambda phi : jt.float32([
+#     [1,0,0,0],
+#     [0,np.cos(phi),-np.sin(phi),0],
+#     [0,np.sin(phi), np.cos(phi),0],
+#     [0,0,0,1]]).stop_grad()
+
+# rot_theta = lambda th : jt.float32([
+#     [np.cos(th),0,-np.sin(th),0],
+#     [0,1,0,0],
+#     [np.sin(th),0, np.cos(th),0],
+#     [0,0,0,1]]).stop_grad()
+
+
+# def pose_spherical(theta, phi, radius):
+#     c2w = trans_t(radius)
+#     c2w = rot_phi(phi/180.*np.pi) @ c2w
+#     c2w = rot_theta(theta/180.*np.pi) @ c2w
+#     c2w = jt.float32(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]])).stop_grad() @ c2w
+#     return c2w
+
+trans_t = lambda t :np.array([
     [1,0,0,0],
     [0,1,0,0],
     [0,0,1,t],
-    [0,0,0,1]])
+    [0,0,0,1]],dtype=np.float32)
 
-rot_phi = lambda phi : jt.float32([
+rot_phi = lambda phi : np.array([
     [1,0,0,0],
     [0,np.cos(phi),-np.sin(phi),0],
     [0,np.sin(phi), np.cos(phi),0],
-    [0,0,0,1]])
+    [0,0,0,1]],dtype=np.float32)
 
-rot_theta = lambda th : jt.float32([
+rot_theta = lambda th :np.array([
     [np.cos(th),0,-np.sin(th),0],
     [0,1,0,0],
     [np.sin(th),0, np.cos(th),0],
-    [0,0,0,1]])
+    [0,0,0,1]],dtype=np.float32)
 
 
 def pose_spherical(theta, phi, radius):
     c2w = trans_t(radius)
     c2w = rot_phi(phi/180.*np.pi) @ c2w
     c2w = rot_theta(theta/180.*np.pi) @ c2w
-    c2w = jt.float32(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]])) @ c2w
+    c2w = np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) @ c2w
     return c2w
-
 
 def load_blender_data(basedir, half_res=False, testskip=1):
     splits = ['train', 'val', 'test']
@@ -74,8 +99,9 @@ def load_blender_data(basedir, half_res=False, testskip=1):
     H, W = imgs[0].shape[:2]
     camera_angle_x = float(meta['camera_angle_x'])
     focal = .5 * W / np.tan(.5 * camera_angle_x)
-
-    render_poses = jt.stack([pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180,180,40+1)[:-1]], 0)
+    # use numpy instead of Var
+    # all Var use cuda
+    render_poses = np.stack([pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180,180,40+1)[:-1]], 0)
 
     if half_res:
         H = H//2

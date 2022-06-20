@@ -26,7 +26,8 @@ from . import grid
 #             os.path.join(parent_dir, path)
 #             for path in ['cuda/render_utils.cpp', 'cuda/render_utils_kernel.cu']],
 #         verbose=True)
-
+#TODO: check the value
+raw2alpha = lambda raw, shift,interval: 1.-jt.pow(1+jt.exp(raw+shift),-interval)
 
 '''Model'''
 class DirectVoxGO(jt.nn.Module):
@@ -149,9 +150,9 @@ class DirectVoxGO(jt.nn.Module):
     def _set_grid_resolution(self, num_voxels):
         # Determine grid resolution
         self.num_voxels = num_voxels
-        self.voxel_size = ((self.xyz_max - self.xyz_min).prod() / num_voxels).pow(1/3)
-        self.world_size = ((self.xyz_max - self.xyz_min) / self.voxel_size).long()
-        self.voxel_size_ratio = self.voxel_size / self.voxel_size_base
+        self.voxel_size = ((self.xyz_max - self.xyz_min).prod() / num_voxels).pow(1/3).stop_grad()
+        self.world_size = ((self.xyz_max - self.xyz_min) / self.voxel_size).long().stop_grad()
+        self.voxel_size_ratio = (self.voxel_size / self.voxel_size_base).stop_grad()
         print('dvgo: voxel_size      ', self.voxel_size)
         print('dvgo: world_size      ', self.world_size)
         print('dvgo: voxel_size_base ', self.voxel_size_base)
@@ -187,12 +188,12 @@ class DirectVoxGO(jt.nn.Module):
             jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.world_size[2].item()),
         ), -1)
         nearest_dist = jt.stack([
-            (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().min(-1)
+            (self_grid_xyz.unsqueeze(-2) - jt.float32(co)).pow(2).sum(-1).sqrt().min(-1)
             # (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().amin(-1)
-            for co in cam_o.split(100)  # for memory saving
+            for co in np.split(cam_o,100)  # for memory saving
         ]).min(0)
         self.density.grid[nearest_dist[None,None] <= near_clip] = -100
-
+        del nearest_dist
     @jt.no_grad()
     def scale_volume_grid(self, num_voxels):
         print('dvgo: scale_volume_grid start')
@@ -233,14 +234,18 @@ class DirectVoxGO(jt.nn.Module):
         far = 1e9  # the given far can be too small while rays stop when hitting scene bbox
         eps_time = time.time()
         N_samples = int(np.linalg.norm(np.array(self.world_size.numpy())+1) / stepsize) + 1
-        rng = jt.arange(N_samples)[None].float()
-        count = jt.zeros_like(self.density.get_dense_grid())
+        rng = jt.arange(N_samples)[None].float().stop_grad()
+        count = jt.zeros_like(self.density.get_dense_grid()).stop_grad()
         #TODO:
         # device = rng.device
-       
+        heart_msg=0
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
+            heart_msg+=1
+            print("???", heart_msg)
+            if heart_msg%10==0:
+                print("heart msg:{}".format(heart_msg))
             ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
-            optimizer=jt.optim.SGD(ones.grid,0)
+            optimizer=jt.optim.SGD([ones.grid],0)
             if irregular_shape:
                 rays_o_ = rays_o_.split(10000)
                 rays_d_ = rays_d_.split(10000)
@@ -251,6 +256,7 @@ class DirectVoxGO(jt.nn.Module):
                 rays_d_ = rays_d_[::downrate, ::downrate].flatten(0,-2).split(10000)
 
             for rays_o, rays_d in zip(rays_o_, rays_d_):
+                print(len(rays_o_), "???")
                 vec = jt.where(rays_d==0, jt.full_like(rays_d, 1e-6), rays_d)
                 rate_a = (self.xyz_max - rays_o) / vec
                 rate_b = (self.xyz_min - rays_o) / vec
@@ -258,15 +264,22 @@ class DirectVoxGO(jt.nn.Module):
                 # t_max = jt.maximum(rate_a, rate_b).amin(-1).clamp(min=near, max=far)
                 # jt.clamp()
                 t_min = jt.minimum(rate_a, rate_b).max(-1).clamp(min_v=near, max_v=far)
-                t_max = jt.maximum(rate_a, rate_b).min(-1).clamp(min_v=near, max_v=far)
                 step = stepsize * self.voxel_size * rng
                 interpx = (t_min[...,None] + step/rays_d.norm(dim=-1,keepdim=True))
                 rays_pts = rays_o[...,None,:] + rays_d[...,None,:] * interpx[...,None]
                 #TODO: backward not supported...... fuck
-                optimizer.backward(ones(rays_pts).sum())
-
+                optimizer.backward(ones(rays_pts.detach()).sum())
+                jt.sync_all()
             with jt.no_grad():
-                count += ( ones.grid.opt_grad(optimizer)> 1)
+                count = (count + ones.grid.opt_grad(optimizer)> 1).detach()
+            exit(0)
+            # del ones
+            # del optimizer
+            # jt.gc()
+            # count.sync(True)
+            # # jt.clean_graph()
+            # jt.gc()
+            
         eps_time = time.time() - eps_time
         print('dvgo: voxel_count_views finish (eps time:', eps_time, 'sec)')
         return count
@@ -282,7 +295,8 @@ class DirectVoxGO(jt.nn.Module):
     def activate_density(self, density, interval=None):
         interval = interval if interval is not None else self.voxel_size_ratio
         shape = density.shape
-        return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
+        return raw2alpha(density.flattne(),self.act_shift,interval).reshape(shape)
+        # return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
 
     def hit_coarse_geo(self, rays_o, rays_d, near, far, stepsize, **render_kwargs):
         '''Check whether the rays hit the solved coarse geometry or not'''
@@ -295,9 +309,16 @@ class DirectVoxGO(jt.nn.Module):
         rays_o = rays_o.reshape(-1, 3)
         rays_d = rays_d.reshape(-1, 3)
         stepdist = stepsize * self.voxel_size
-        ray_pts, mask_outbbox, ray_id = render_utils_cuda.sample_pts_on_rays(
-                rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
-        mask_inbbox = ~mask_outbbox
+        #TODO: not implemented
+
+        # ray_pts, mask_outbbox, ray_id = render_utils_cuda.sample_pts_on_rays(
+        #         rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
+        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+                                            jt.Var(np.load("mask_outbbox.npy")),\
+                                            jt.Var(np.load("ray_id.npy")),\
+                                            jt.Var(np.load("step_id.npy"))
+        #mask_inbbox = ~mask_outbbox
+        mask_inbbox = (mask_outbbox==False)
         hit = jt.zeros([len(rays_o)], dtype=jt.bool)
         hit[ray_id[mask_inbbox][self.mask_cache(ray_pts[mask_inbbox])]] = 1
         return hit.reshape(shape)
@@ -320,9 +341,18 @@ class DirectVoxGO(jt.nn.Module):
         #rays_o = rays_o.contiguous()
         #rays_d = rays_d.contiguous()
         stepdist = stepsize * self.voxel_size
-        ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils_cuda.sample_pts_on_rays(
-            rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
-        mask_inbbox = ~mask_outbbox
+        #TODO: render_utils_cuda.sample_pts_on_rays not implemeted:
+        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+                                            jt.Var(np.load("mask_outbbox.npy")),\
+                                            jt.Var(np.load("ray_id.npy")),\
+                                            jt.Var(np.load("step_id.npy"))
+        # ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils_cuda.sample_pts_on_rays(
+        #     rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
+        #TODO:
+        # bad operand type for unary ~: 'jittor_core.Var'
+        # ~ op not supported
+        #mask_inbbox = ~mask_outbbox
+        mask_inbbox = (mask_outbbox==False)
         ray_pts = ray_pts[mask_inbbox]
         ray_id = ray_id[mask_inbbox]
         step_id = step_id[mask_inbbox]
@@ -363,7 +393,10 @@ class DirectVoxGO(jt.nn.Module):
             alpha = alpha[mask]
 
         # compute accumulated transmittance
+        #TODO:
+        
         weights, alphainv_last = Alphas2Weights.apply(alpha, ray_id, N)
+        
         if self.fast_color_thres > 0:
             mask = (weights > self.fast_color_thres)
             weights = weights[mask]
@@ -490,6 +523,8 @@ class Alphas2Weights(Function):
 ''' Ray and batch
 '''
 def get_rays(H, W, K, c2w, inverse_y, flip_x, flip_y, mode='center'):
+
+    c2w=jt.float32(c2w)
     # i, j = jt.meshgrid(
     #     jt.linspace(0, W-1, W, device=c2w.device),
     #     jt.linspace(0, H-1, H, device=c2w.device))  # pytorch's meshgrid has indexing='ij'
@@ -520,6 +555,7 @@ def get_rays(H, W, K, c2w, inverse_y, flip_x, flip_y, mode='center'):
         dirs = jt.stack([(i-K[0][2])/K[0][0], (j-K[1][2])/K[1][1], jt.ones_like(i)], -1)
     else:
         #dirs = jt.stack([(i-K[0][2])/K[0][0], -(j-K[1][2])/K[1][1], -jt.ones_like(i)], -1)
+        #TODO: jittor cpu stack_op causes unstable result ,produce 0 or nan
         dirs = jt.stack([-(i-K[0][2])/K[0][0], -(j-K[1][2])/K[1][1], jt.ones_like(i)], -1)
     # Rotate ray directions from camera frame to the world frame
     rays_d = jt.sum(dirs[..., np.newaxis, :] * c2w[:3,:3], -1)  # dot product, equals to: [c2w.dot(dir) for dir in dirs]
@@ -592,10 +628,19 @@ def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_
         # rays_o_tr[i].copy_(rays_o.to(rgb_tr.device))
         # rays_d_tr[i].copy_(rays_d.to(rgb_tr.device))
         # viewdirs_tr[i].copy_(viewdirs.to(rgb_tr.device))
-        rays_o_tr[i].update(rays_o)
-        rays_d_tr[i].update(rays_d)
-        viewdirs_tr[i].update(viewdirs)
-        del rays_o, rays_d, viewdirs
+        # rays_o_tr[i].update(rays_o)
+        # rays_d_tr[i].update(rays_d)
+        # viewdirs_tr[i].update(viewdirs)
+        rays_o_tr[i]=rays_o
+        rays_d_tr[i]=rays_d
+        viewdirs_tr[i]=viewdirs
+    # rays_o_tr=rays_o_tr.detach()
+    # rays_d_tr=rays_d_tr.detach()
+    # viewdirs_tr=viewdirs_tr.detach()
+        # del rays_o, rays_d, viewdirs
+    jt.sync_all(True)
+    jt.clean_graph()
+    jt.gc()
     eps_time = time.time() - eps_time
     print('get_training_rays: finish (eps time:', eps_time, 'sec)')
     return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz

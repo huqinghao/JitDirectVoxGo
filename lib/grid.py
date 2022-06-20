@@ -47,8 +47,8 @@ class DenseGrid(nn.Module):
         self.world_size = world_size
         # self.register_buffer('xyz_min', jt.Tensor(xyz_min))
         # self.register_buffer('xyz_max', jt.Tensor(xyz_max))
-        self.xyz_min=jt.float32(xyz_min).stop_grad()
-        self.xyz_max=jt.float32(xyz_max).stop_grad()
+        self.xyz_min=jt.array(xyz_min.copy()).stop_grad()
+        self.xyz_max=jt.array(xyz_min.copy()).stop_grad()
         # self.grid = (jt.zeros([1, channels, *world_size]))
         #TODO: jittor *Var
         self.grid =jt.zeros([1, channels, *world_size.tolist()])
@@ -58,8 +58,8 @@ class DenseGrid(nn.Module):
         xyz: global coordinates to query
         '''
         shape = xyz.shape[:-1]
-        xyz = xyz.reshape(1,1,1,-1,3)
-        ind_norm = ((xyz - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
+        xyz_ = xyz.reshape(1,1,1,-1,3)
+        ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
         out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
         out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)
         if self.channels == 1:
@@ -254,7 +254,9 @@ class MaskGrid(nn.Module):
         '''
         shape = xyz.shape[:-1]
         xyz = xyz.reshape(-1, 3)
-        mask = render_utils_cuda.maskcache_lookup(self.mask, xyz, self.xyz2ijk_scale, self.xyz2ijk_shift)
+        #TODO:not implemented yet
+        #mask = render_utils_cuda.maskcache_lookup(self.mask, xyz, self.xyz2ijk_scale, self.xyz2ijk_shift)
+        mask=jt.Var(np.load("mask.npy"))
         mask = mask.reshape(shape)
         return mask
 

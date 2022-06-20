@@ -169,32 +169,34 @@ def load_everything(args, cfg):
         if k not in kept_keys:
             data_dict.pop(k)
 
+    # use numpy instead of Var as it costs too much cuda resource
     # construct data tensor
-    if data_dict['irregular_shape']:
-        data_dict['images'] = [jt.array(im,dtype="float32") for im in data_dict['images']]
-    else:
-        data_dict['images'] = jt.array(data_dict['images'],dtype="float32")
-    data_dict['poses'] = jt.array(data_dict['poses'])
+    # if data_dict['irregular_shape']:
+    #     data_dict['images'] = [jt.array(im,dtype="float32").stop_grad() for im in data_dict['images']]
+    # else:
+    #     data_dict['images'] = jt.array(data_dict['images'],dtype="float32").stop_grad()
     return data_dict
 
 
 def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far):
     #TODO: bugs, min(inf,data) cause NaN errr 
-    #xyz_min = jt.array([np.inf, np.inf, np.inf])
-    #xyz_max = -xyz_min
+    # no nan error in gpu mode, it seems that the bug hiddens in the cpu op
+    # xyz_min = jt.array([np.inf, np.inf, np.inf]).stop_grad()
+    # xyz_max = (-xyz_min).stop_grad()
+    #
     max_val=np.finfo(np.float16).max
     min_val=np.finfo(np.float16).min
-    xyz_min = jt.array([max_val, max_val,max_val])
-    xyz_max = jt.array([min_val, min_val,min_val])
+    xyz_min = jt.array([max_val, max_val,max_val]).stop_grad()
+    xyz_max = jt.array([min_val, min_val,min_val]).stop_grad()
     for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w,
                 ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         if cfg.data.ndc:
-            pts_nf = jt.stack([rays_o+rays_d*near, rays_o+rays_d*far])
+            pts_nf = jt.stack([rays_o+rays_d*near, rays_o+rays_d*far]).stop_grad()
         else:
-            pts_nf = jt.stack([rays_o+viewdirs*near, rays_o+viewdirs*far])
+            pts_nf = jt.stack([rays_o+viewdirs*near, rays_o+viewdirs*far]).stop_grad()
         #TODO：amin is not implemented 
         # use min 
         xyz_min = jt.minimum(xyz_min, pts_nf.min((0,1,2)))
@@ -387,15 +389,22 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
     rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler = gather_training_rays()
 
+    jt.clean_graph()
+    jt.sync_all()
+    jt.gc()
+    
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
         def per_voxel_init():
-            cnt = model.voxel_count_views(
-                    rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
-                    stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
-                    irregular_shape=data_dict['irregular_shape'])
+            if False:
+                cnt = model.voxel_count_views(
+                        rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
+                        stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
+                        irregular_shape=data_dict['irregular_shape'])
+            else:
+                cnt=jt.float32(np.load("count.npy"))
             optimizer.set_pervoxel_lr(cnt)
-            model.mask_cache.mask[cnt.squeeze() <= 2] = False
+            model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
         per_voxel_init()
 
     if cfg_train.maskout_lt_nviews > 0:
@@ -437,9 +446,14 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rays_d = rays_d_tr[sel_i]
             viewdirs = viewdirs_tr[sel_i]
         elif cfg_train.ray_sampler == 'random':
-            sel_b = jt.randint(rgb_tr.shape[0], [cfg_train.N_rand])
-            sel_r = jt.randint(rgb_tr.shape[1], [cfg_train.N_rand])
-            sel_c = jt.randint(rgb_tr.shape[2], [cfg_train.N_rand])
+            from lib.utils import randint
+            #TODO: jittor and torch function mismatch
+            # sel_b = jt.randint(rgb_tr.shape[0], [cfg_train.N_rand])
+            # sel_r = jt.randint(rgb_tr.shape[1], [cfg_train.N_rand])
+            # sel_c = jt.randint(rgb_tr.shape[2], [cfg_train.N_rand])
+            sel_b = randint(rgb_tr.shape[0], [cfg_train.N_rand])
+            sel_r = randint(rgb_tr.shape[1], [cfg_train.N_rand])
+            sel_c = randint(rgb_tr.shape[2], [cfg_train.N_rand])
             target = rgb_tr[sel_b, sel_r, sel_c]
             rays_o = rays_o_tr[sel_b, sel_r, sel_c]
             rays_d = rays_d_tr[sel_b, sel_r, sel_c]
@@ -593,6 +607,7 @@ if __name__=='__main__':
     args = parser.parse_args()
     cfg = mmcv.Config.fromfile(args.config)
 
+    jt.flags.use_cuda = 2
     # init enviroment
     # if jt.cuda.is_available():
     #     jt.set_default_tensor_type('jt.cuda.FloatTensor')
