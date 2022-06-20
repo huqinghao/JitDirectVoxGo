@@ -225,6 +225,9 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     assert(len(rays_o.shape)==2)
     assert(rays_o.size(1)==3)
     
+    threads = 512
+    n_rays = rays_o.size(0)
+    
     t_min,t_max = infer_t_minmax(rays_o, rays_d, xyz_min, xyz_max, near, far)
     
     N_steps = infer_n_samples(rays_d, t_min, t_max, stepdist)
@@ -237,12 +240,88 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     
     ray_id = jt.zeros((total_len),dtype="int64")
     
-    # 214-216 changes to src code 
-    # 216 不知道怎么处理
+    # __set_1_at_ray_seg_start
+    jt.code((1,),"float32", [ray_id,N_steps_cumsum], cuda_header='''
+            
+#include <cuda.h>
+#include <cuda_runtime.h>
+
+#include <vector>
+
+namespace{     
+
+__global__ void __set_1_at_ray_seg_start(
+        int64_t* __restrict__ ray_id,
+        int64_t* __restrict__ N_steps_cumsum,
+        const int n_rays) {
+  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if(0<idx && idx<n_rays) {
+    ray_id[N_steps_cumsum[idx-1]] = 1;
+  }
+}           
+
+}
+    ''', 
+    cuda_src=f'''
+    @alias(ray_id, in0)
+    @alias(N_steps_cumsum, in1)
+    @alias(place_holder, out0)
+
+    cudaMemsetAsync(out0_p, 0, out0->size);
     
+    __set_1_at_ray_seg_start<<<({n_rays}+{threads}-1)/{threads}, {threads}>>>(
+      ray_id_p, N_steps_cumsum_p, {n_rays});
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) 
+            printf("Error in __set_1_at_ray_seg_start: %s\\n", cudaGetErrorString(err));
+    
+    ''')
+    
+    ray_id = jt.cumsum(ray_id,0)
+
     step_id = jt.empty((total_len),dtype=ray_id.dtype)
     
-    # 218-219 changes to src code
+    # __set_step_id
+    jt.code((1,),"float32", [step_id, ray_id, N_steps_cumsum], cuda_header='''
+            
+#include <cuda.h>
+#include <cuda_runtime.h>
+
+#include <vector>
+
+namespace{     
+
+__global__ void __set_step_id(
+        int64_t* __restrict__ step_id,
+        int64_t* __restrict__ ray_id,
+        int64_t* __restrict__ N_steps_cumsum,
+        const int total_len) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx<total_len) {
+      const int rid = ray_id[idx];
+      step_id[idx] = idx - ((rid!=0) ? N_steps_cumsum[rid-1] : 0);
+    }
+}         
+
+}            
+    ''', 
+    cuda_src=f'''
+    @alias(step_id, in0)
+    @alias(ray_id, in1)
+    @alias(N_steps_cumsum, in2)
+    @alias(place_holder, out0)
+
+    cudaMemsetAsync(out0_p, 0, out0->size);
+    
+    __set_step_id<<<({total_len}+{threads}-1)/{threads}, {threads}>>>(
+      step_id_p, ray_id_p, N_steps_cumsum_p, {total_len});
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) 
+            printf("Error in __set_step_id: %s\\n", cudaGetErrorString(err));
+    
+    ''')
     
     rays_start,rays_dir = infer_ray_start_dir(rays_o, rays_d, t_min)
     
@@ -251,7 +330,7 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     mask_outbbox = jt.empty((total_len), dtype='bool')
     
     
-    rays_pts,mask_outbbox = jt.code([],[],[rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist],
+    rays_pts,mask_outbbox = jt.code((1,),"float32",[rays_start, rays_dir, xyz_min, xyz_max, ray_id, step_id, rays_pts, mask_outbbox],
     cuda_header='''
     
 #include <cuda.h>
@@ -265,28 +344,6 @@ namespace{
    Sampling query points on rays.
  */
  
-__global__ void __set_1_at_ray_seg_start(
-        int64_t* __restrict__ ray_id,
-        int64_t* __restrict__ N_steps_cumsum,
-        const int n_rays) {
-  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if(0<idx && idx<n_rays) {
-    ray_id[N_steps_cumsum[idx-1]] = 1;
-  }
-}
-
-__global__ void __set_step_id(
-        int64_t* __restrict__ step_id,
-        int64_t* __restrict__ ray_id,
-        int64_t* __restrict__ N_steps_cumsum,
-        const int total_len) {
-    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if(idx<total_len) {
-      const int rid = ray_id[idx];
-      step_id[idx] = idx - ((rid!=0) ? N_steps_cumsum[rid-1] : 0);
-    }
-}
-
 template <typename scalar_t>
 __global__ void sample_pts_on_rays_cuda_kernel(
         scalar_t* __restrict__ rays_start,
@@ -329,23 +386,29 @@ __global__ void sample_pts_on_rays_cuda_kernel(
     @alias(xyz_max, in3)
     @alias(ray_id, in4)
     @alias(step_id, in5)
-    @alias(rays_pts, out0)
-    @alias(mask_outbbox, out1)
+    @alias(rays_pts, in6)
+    @alias(mask_outbbox, in7)
+    @alias(place_holder, out0)
 
-    const int threads = 512;
-    const int n_rays = rays_start_shape0;
-    
-    
-    
-    
-    
-    
+    cudaMemsetAsync(out0_p, 0, out0->size);
+
+    sample_pts_on_rays_cuda_kernel<float32><<<({total_len}+{threads}-1)/{threads}, {threads}>>>(
+        rays_start_p,
+        rays_dir_p,
+        xyz_min_p,
+        xyz_max_p,
+        ray_id_p,
+        step_id_p,
+        {stepdist}, {total_len},
+        rays_pts_p,
+        mask_outbbox_p);
+
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
             printf("Error in sample_pts_on_rays: %s\\n", cudaGetErrorString(err));
     ''')
     
-    # return rays_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max
+    return rays_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max
     
 def maskcache_lookup(world, xyz, xyz2ijk_scale, xyz2ijk_shift):
     assert(world.ndim==3)
