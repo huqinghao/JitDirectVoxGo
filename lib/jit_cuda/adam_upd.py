@@ -53,7 +53,7 @@ __global__ void adam_upd_cuda_kernel(
 
     /*
     AT_DISPATCH_FLOATING_TYPES(param.type(), "adam_upd_cuda", ([&] {
-        adam_upd_cuda_kernel<scalar_t><<<blocks, threads>>>(
+        adam_upd_cuda_kernel<float32><<<blocks, threads>>>(
             param.data<scalar_t>(),
             grad.data<scalar_t>(),
             exp_avg.data<scalar_t>(),
@@ -128,7 +128,7 @@ __global__ void masked_adam_upd_cuda_kernel(
 
     /*
     AT_DISPATCH_FLOATING_TYPES(param.type(), "masked_adam_upd_cuda", ([&] {
-        masked_adam_upd_cuda_kernel<scalar_t><<<blocks, threads>>>(
+        masked_adam_upd_cuda_kernel<float32><<<blocks, threads>>>(
             param.data<scalar_t>(),
             grad.data<scalar_t>(),
             exp_avg.data<scalar_t>(),
@@ -205,7 +205,7 @@ __global__ void adam_upd_with_perlr_cuda_kernel(
 
     /*
     AT_DISPATCH_FLOATING_TYPES(param.type(), "adam_upd_with_perlr_cuda", ([&] {
-        adam_upd_with_perlr_cuda_kernel<scalar_t><<<blocks, threads>>>(
+        adam_upd_with_perlr_cuda_kernel<float32><<<blocks, threads>>>(
             param.data<scalar_t>(),
             grad.data<scalar_t>(),
             exp_avg.data<scalar_t>(),
