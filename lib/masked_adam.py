@@ -41,40 +41,40 @@ class MaskedAdam(jt.optim.Adam):
 
     @jt.no_grad()
     def step(self):
+        n = self.n_step
+        jt.flags.node_order = 1
         for group in self.param_groups:
-            lr = group['lr']
-            beta1, beta2 = group['betas']
-            eps = group['eps']
-            skip_zero_grad = group['skip_zero_grad']
+            lr = group.get("lr", self.lr)
+            eps = group.get("eps", self.eps)
+            skip_zero_grad=group["skip_zero_grad"]
+            # weight_decay = group.get("weight_decay", self.weight_decay)
+            beta1, beta2 = group.get("betas", self.betas)
 
-            for param in group['params']:
-                if param.grad is not None:
-                    state = self.state[param]
+            for param,grad, v, m in zip(group["params"], group["grads"], group["values"], group["m"]):
+                if param.is_stop_grad(): 
+                    continue
                     # Lazy state initialization
-                    if len(state) == 0:
-                        state['step'] = 0
-                        # # Exponential moving average of gradient values
-                        # state['exp_avg'] = jt.zeros_like(param, memory_format=jt.preserve_format)
-                        # # Exponential moving average of squared gradient values
-                        # state['exp_avg_sq'] = jt.zeros_like(param, memory_format=jt.preserve_format)
-                         # Exponential moving average of gradient values
-                        state['exp_avg'] = jt.zeros_like(param)
-                        # Exponential moving average of squared gradient values
-                        state['exp_avg_sq'] = jt.zeros_like(param)
+                    # if len(state) == 0:
+                    #     state['step'] = 0
+                    #     # # Exponential moving average of gradient values
+                    #     # state['exp_avg'] = jt.zeros_like(param, memory_format=jt.preserve_format)
+                    #     # # Exponential moving average of squared gradient values
+                    #     # state['exp_avg_sq'] = jt.zeros_like(param, memory_format=jt.preserve_format)
+              
 
-                    state['step'] += 1
+                    # state['step'] += 1
                     #TODO: grad
-                    if self.per_lr is not None and param.shape == self.per_lr.shape:
-                        adam_upd.adam_upd_with_perlr(
-                                param, param.grad, state['exp_avg'], state['exp_avg_sq'], self.per_lr,
-                                state['step'], beta1, beta2, lr, eps)
-                    elif skip_zero_grad:
-                        #TODO:
-                        adam_upd.masked_adam_upd(
-                                param, param.grad, state['exp_avg'], state['exp_avg_sq'],
-                                state['step'], beta1, beta2, lr, eps)
-                    else:
-                        adam_upd.adam_upd(
-                                param, param.grad, state['exp_avg'], state['exp_avg_sq'],
-                                state['step'], beta1, beta2, lr, eps)
+                if self.per_lr is not None and param.shape == self.per_lr.shape:
+                    adam_upd.adam_upd_with_perlr(
+                            param, grad, m, v, self.per_lr,
+                            n, beta1, beta2, lr, eps)
+                elif skip_zero_grad:
+                    #TODO:
+                    adam_upd.masked_adam_upd(
+                            param, grad, m, v,
+                            n, beta1, beta2, lr, eps)
+                else:
+                    adam_upd.adam_upd(
+                            param, grad, m, v,
+                            n, beta1, beta2, lr, eps)
 

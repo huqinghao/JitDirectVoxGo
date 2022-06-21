@@ -150,7 +150,9 @@ def seed_everything():
     (some pytorch operation is non-deterministic like the backprop of grid_samples)
     '''
     jt.misc.set_global_seed(args.seed)
-    # jt.manual_seed(args.seed)
+    #to match torch random numbers, load torch 
+    # import torch
+    # torch.manual_seed(args.seed)
     # np.random.seed(args.seed)
     # random.seed(args.seed)
 
@@ -446,10 +448,11 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             viewdirs = viewdirs_tr[sel_i]
         elif cfg_train.ray_sampler == 'random':
             from lib.utils import randint
-            #TODO: jittor and torch function mismatch
-            # sel_b = jt.randint(rgb_tr.shape[0], [cfg_train.N_rand])
-            # sel_r = jt.randint(rgb_tr.shape[1], [cfg_train.N_rand])
-            # sel_c = jt.randint(rgb_tr.shape[2], [cfg_train.N_rand])
+            #TODO: for debug
+            import torch
+            # sel_b = jt.Var(np.load("sel_b.npy"))
+            # sel_r = jt.Var(np.load("sel_r.npy"))
+            # sel_c = jt.Var(np.load("sel_c.npy"))
             sel_b = randint(rgb_tr.shape[0], [cfg_train.N_rand])
             sel_r = randint(rgb_tr.shape[1], [cfg_train.N_rand])
             sel_c = randint(rgb_tr.shape[2], [cfg_train.N_rand])
@@ -499,7 +502,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rgbper = (render_result['raw_rgb'] - target[render_result['ray_id']]).pow(2).sum(-1)
             rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
             loss += cfg_train.weight_rgbper * rgbper_loss
-        loss.backward()
+        optimizer.backward(loss)
 
         if global_step<cfg_train.tv_before and global_step>cfg_train.tv_after and global_step%cfg_train.tv_every==0:
             if cfg_train.weight_tv_density>0:

@@ -229,13 +229,13 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     
     threads = 512
     n_rays = rays_o.size(0)
-    
+    # match with torch OK
     t_min,t_max = infer_t_minmax(rays_o, rays_d, xyz_min, xyz_max, near, far)
-    
+    # match with torch OK
     N_steps = infer_n_samples(rays_d, t_min, t_max, stepdist)
     
     # N_steps_cumsum = N_steps.cumsum(0) # 211 TODO check
-    
+    # 
     N_steps_cumsum = jt.cumsum(N_steps,0) # 211 TODO check
     
     total_len = N_steps.data.sum().item() # 212 TODO check
@@ -291,7 +291,7 @@ __global__ void __set_1_at_ray_seg_start(
 #include <iostream>
 #include <vector>
 
-using jittor::int64
+using jittor::int64;
 
 namespace{     
 
@@ -303,7 +303,7 @@ __global__ void __set_step_id(
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx<total_len) {
       const int rid = ray_id[idx];
-      step_id[idx] = idx - ((rid!=0) ? N_steps_cumsum[rid-1] : 0);
+      step_id[idx] = idx - ((rid!=0) ? N_steps_cumsum[rid-1]:0);
     }
 }         
 

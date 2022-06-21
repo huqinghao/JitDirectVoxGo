@@ -314,13 +314,13 @@ class DirectVoxGO(jt.nn.Module):
         stepdist = stepsize * self.voxel_size
         #TODO: not implemented
         
-        # ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
-        #         rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
+        ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
+                rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
 
-        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
-                                            jt.Var(np.load("mask_outbbox.npy")),\
-                                            jt.Var(np.load("ray_id.npy")),\
-                                            jt.Var(np.load("step_id.npy"))
+        # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+        #                                     jt.Var(np.load("mask_outbbox.npy")),\
+        #                                     jt.Var(np.load("ray_id.npy")),\
+        #                                     jt.Var(np.load("step_id.npy"))
         #TODO: ~ op not supported
         #mask_inbbox = ~mask_outbbox
         mask_inbbox = (mask_outbbox==False)
@@ -388,6 +388,7 @@ class DirectVoxGO(jt.nn.Module):
 
         # query for alpha w/ post-activation
         density = self.density(ray_pts)
+        # alpha2weight has some mismatch with torch (err about 1e-7)
         alpha = self.activate_density(density, interval)
         if self.fast_color_thres > 0:
             mask = (alpha > self.fast_color_thres)
@@ -399,7 +400,6 @@ class DirectVoxGO(jt.nn.Module):
 
         # compute accumulated transmittance
         #TODO:
-        
         weights, alphainv_last = Alphas2Weights.apply(alpha, ray_id, N)
         
         if self.fast_color_thres > 0:
@@ -415,7 +415,8 @@ class DirectVoxGO(jt.nn.Module):
             pass
         else:
             #debug
-            #k0=jt.Var(np.load("k0.npy"))
+            #TODO:
+            # k0=jt.Var(np.load("k0.npy"))
             k0 = self.k0(ray_pts)
         jt.sync_all()
         if self.rgbnet is None:
@@ -441,6 +442,8 @@ class DirectVoxGO(jt.nn.Module):
         # Ray marching
         #TODO: scatter --> segment_coo
         #TODO: whether it need gradient
+        # weights=jt.Var(np.load("weights.npy"))
+        # ray_id=jt.Var(np.load("ray_id.npy"))
         rgb_marched = scatter(x=jt.zeros([N, 3]),dim=0,
                 src=(weights.unsqueeze(-1) * rgb),
                 index=ray_id,
@@ -460,7 +463,7 @@ class DirectVoxGO(jt.nn.Module):
             with jt.no_grad():
                 #TODO: 
                 # scatter --> segment_coo
-                depth = scatter(  x=jt.zeros([N]),dim=0,
+                depth = scatter( x=jt.zeros([N]),dim=0,
                         src=(weights * step_id),
                         index=ray_id,
                         reduce='add')

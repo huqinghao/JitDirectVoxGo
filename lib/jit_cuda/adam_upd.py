@@ -10,7 +10,7 @@ def adam_upd(
     beta2, 
     lr, 
     eps):
-    return jt.code([],[],[param, grad, exp_avg, exp_avg_sq],
+    return jt.code(inputs=[grad],outputs=[param,exp_avg, exp_avg_sq],
     cuda_header='''
 
 #include <cuda.h>
@@ -39,12 +39,12 @@ __global__ void adam_upd_cuda_kernel(
     ''',
     
     cuda_src=f'''
-    @alias(param, in0)
-    @alias(grad, in1)
-    @alias(exp_avg, in2)
-    @alias(exp_avg_sq, in3)
+    @alias(param, out0)
+    @alias(grad, in0)
+    @alias(exp_avg, out1)
+    @alias(exp_avg_sq, out2)
     
-    const size_t N = in0->numel()
+    const size_t N = in0->numel();
 
     const int threads = 512;
     const int blocks = (N + threads - 1) / threads;
@@ -64,7 +64,7 @@ __global__ void adam_upd_cuda_kernel(
     ''')
 
 
-def masked_adam_upd_cuda_kernel(
+def masked_adam_upd(
     param, 
     grad, 
     exp_avg, 
@@ -108,7 +108,7 @@ __global__ void masked_adam_upd_cuda_kernel(
     @alias(exp_avg, in2)
     @alias(exp_avg_sq, in3)
     
-    const size_t N = in0->numel()
+    const size_t N = in0->numel();
 
     const int threads = 512;
     const int blocks = (N + threads - 1) / threads;
@@ -176,7 +176,7 @@ __global__ void adam_upd_with_perlr_cuda_kernel(
     @alias(exp_avg_sq, in3)
     @alias(perlr, in4)
     
-    const size_t N = in0->numel()
+    const size_t N = in0->numel();
 
     const int threads = 512;
     const int blocks = (N + threads - 1) / threads;
