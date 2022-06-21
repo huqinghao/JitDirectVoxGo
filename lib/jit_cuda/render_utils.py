@@ -783,8 +783,10 @@ __global__ void __set_i_for_segment_start_end(
     @alias(i_start, out0)
     @alias(i_end, out1)
     
-    __set_i_for_segment_start_end<<<({n_pts}+{threads}-1)/{threads}, {threads}>>>(
-          ray_id_p, {n_pts}, i_start_p, i_end_p);
+    const int n_pts = ray_id_shape0;
+    
+    __set_i_for_segment_start_end<<<(n_pts+{threads}-1)/{threads}, {threads}>>>(
+          ray_id_p, n_pts, i_start_p, i_end_p);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
         printf("Error in __set_i_for_segment_start_end: %s\\n", cudaGetErrorString(err));
