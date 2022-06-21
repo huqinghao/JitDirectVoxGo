@@ -221,9 +221,9 @@ class DirectVoxGO(jt.nn.Module):
     @jt.no_grad()
     def update_occupancy_cache(self):
         cache_grid_xyz = jt.stack(jt.meshgrid(
-            jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.mask_cache.mask.shape[0].item()),
-            jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.mask_cache.mask.shape[1].item()),
-            jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.mask_cache.mask.shape[2].item()),
+            jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.mask_cache.mask.shape[0]),
+            jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.mask_cache.mask.shape[1]),
+            jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.mask_cache.mask.shape[2]),
         ), -1)
         cache_grid_density = self.density(cache_grid_xyz)[None,None]
         cache_grid_alpha = self.activate_density(cache_grid_density)
