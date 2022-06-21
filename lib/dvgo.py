@@ -242,7 +242,7 @@ class DirectVoxGO(jt.nn.Module):
         heart_msg=0
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
             heart_msg+=1
-            print("???", heart_msg)
+            # print("???", heart_msg)
             if heart_msg%10==0:
                 print("heart msg:{}".format(heart_msg))
             ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
@@ -257,7 +257,7 @@ class DirectVoxGO(jt.nn.Module):
                 rays_d_ = rays_d_[::downrate, ::downrate].flatten(0,-2).split(10000)
 
             for rays_o, rays_d in zip(rays_o_, rays_d_):
-                print(len(rays_o_), "???")
+                # print(len(rays_o_), "???")
                 vec = jt.where(rays_d==0, jt.full_like(rays_d, 1e-6), rays_d)
                 rate_a = (self.xyz_max - rays_o) / vec
                 rate_b = (self.xyz_min - rays_o) / vec
@@ -273,7 +273,7 @@ class DirectVoxGO(jt.nn.Module):
                 jt.sync_all()
             with jt.no_grad():
                 count = (count + ones.grid.opt_grad(optimizer)> 1).detach()
-            exit(0)
+            # exit(0)
             # del ones
             # del optimizer
             # jt.gc()
