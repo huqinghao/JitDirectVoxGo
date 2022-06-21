@@ -407,6 +407,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 cnt=jt.float32(np.load("count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
+            model.mask_cache.mask = model.mask_cache.mask.bool()
         per_voxel_init()
 
     if cfg_train.maskout_lt_nviews > 0:

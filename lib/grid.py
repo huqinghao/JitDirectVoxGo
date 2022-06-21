@@ -10,7 +10,7 @@ from jittor import init
 import jittor as jt
 import jittor.nn as nn
 # import jt.nn.functional as F
-
+from .jit_cuda import render_utils,total_variation
 # from jt.utils.cpp_extension import load
 #TODO
 # parent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -62,8 +62,8 @@ class DenseGrid(nn.Module):
         ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
         # TODO
         # nn.grid_sample too slow 
-        #out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
-        out= jt.Var(np.load("dense_grid.npy"))
+        out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+        # out= jt.Var(np.load("dense_grid.npy"))
         out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)
         if self.channels == 1:
             out = out.squeeze(-1)
@@ -79,7 +79,7 @@ class DenseGrid(nn.Module):
     def total_variation_add_grad(self, wx, wy, wz, dense_mode):
         '''Add gradients by total variation loss in-place'''
         #TODO: grad
-        total_variation_cuda.total_variation_add_grad(
+        total_variation.total_variation_add_grad(
             self.grid, self.grid.grad, wx, wy, wz, dense_mode)
 
     def get_dense_grid(self):
@@ -238,6 +238,7 @@ class MaskGrid(nn.Module):
             density = nn.max_pool3d(st['model_state_dict']['density.grid'], kernel_size=3, padding=1, stride=1)
             alpha = 1 - jt.exp(-nn.softplus(density + st['model_state_dict']['act_shift']) * st['model_kwargs']['voxel_size_ratio'])
             mask = (alpha >= self.mask_cache_thres).squeeze(0).squeeze(0)
+            mask = mask.bool()
             xyz_min = jt.float32(st['model_kwargs']['xyz_min'])
             xyz_max = jt.float32(st['model_kwargs']['xyz_max'])
         else:
@@ -258,8 +259,8 @@ class MaskGrid(nn.Module):
         shape = xyz.shape[:-1]
         xyz = xyz.reshape(-1, 3)
         #TODO:not implemented yet
-        #mask = render_utils_cuda.maskcache_lookup(self.mask, xyz, self.xyz2ijk_scale, self.xyz2ijk_shift)
-        mask=jt.Var(np.load("mask.npy"))
+        mask = render_utils.maskcache_lookup(self.mask, xyz, self.xyz2ijk_scale, self.xyz2ijk_shift)
+        # mask=jt.Var(np.load("mask.npy"))
         mask = mask.reshape(shape)
         return mask
 
