@@ -1,5 +1,6 @@
 import jittor as jt
-   
+import math  
+  
 def adam_upd(
     param, 
     grad, 
@@ -10,7 +11,9 @@ def adam_upd(
     beta2, 
     lr, 
     eps):
-    return jt.code(inputs=[grad],outputs=[param,exp_avg, exp_avg_sq],
+    step_size = jt.float32(lr * math.sqrt(1 - pow(beta2, step)) / (1 - pow(beta1, step)));
+    print(step_size)
+    return jt.code(inputs=[grad,step_size],outputs=[param,exp_avg, exp_avg_sq],
     cuda_header='''
 
 #include <cuda.h>
@@ -26,13 +29,13 @@ __global__ void adam_upd_cuda_kernel(
     scalar_t* __restrict__ exp_avg,
     scalar_t* __restrict__ exp_avg_sq,
     const size_t N,
-    const float step_size, const float beta1, const float beta2, const float eps) {
+    scalar_t* __restrict__ step_size, const float beta1, const float beta2, const float eps) {
 
   const size_t index = blockIdx.x * blockDim.x + threadIdx.x;
   if(index<N) {
     exp_avg[index] = beta1 * exp_avg[index] + (1-beta1) * grad[index];
     exp_avg_sq[index] = beta2 * exp_avg_sq[index] + (1-beta2) * grad[index] * grad[index];
-    param[index] -= step_size * exp_avg[index] / (sqrt(exp_avg_sq[index]) + eps);
+    param[index] -= step_size[0] * exp_avg[index] / (sqrt(exp_avg_sq[index]) + eps);
   }
 }
 }
@@ -41,6 +44,7 @@ __global__ void adam_upd_cuda_kernel(
     cuda_src=f'''
     @alias(param, out0)
     @alias(grad, in0)
+    @alias(step_size, in1)
     @alias(exp_avg, out1)
     @alias(exp_avg_sq, out2)
     
@@ -49,14 +53,12 @@ __global__ void adam_upd_cuda_kernel(
     const int threads = 512;
     const int blocks = (N + threads - 1) / threads;
 
-    const float step_size = {lr} * sqrt(1 - pow({beta2}, (float){step})) / (1 - pow({beta1}, (float){step}));
-
     adam_upd_cuda_kernel<float32><<<blocks, threads>>>(
         param_p,
         grad_p,
         exp_avg_p,
         exp_avg_sq_p,
-        N, step_size, {beta1}, {beta2}, {eps});
+        N, step_size_p, {beta1}, {beta2}, {eps});
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 

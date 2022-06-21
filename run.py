@@ -450,7 +450,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         elif cfg_train.ray_sampler == 'random':
             from lib.utils import randint
             #TODO: for debug
-            import torch
+            # import torch
             # sel_b = jt.Var(np.load("sel_b.npy"))
             # sel_r = jt.Var(np.load("sel_r.npy"))
             # sel_c = jt.Var(np.load("sel_c.npy"))
