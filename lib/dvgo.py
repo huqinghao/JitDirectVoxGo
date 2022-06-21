@@ -347,12 +347,12 @@ class DirectVoxGO(jt.nn.Module):
         #rays_d = rays_d.contiguous()
         stepdist = stepsize * self.voxel_size
         #TODO: render_utils_cuda.sample_pts_on_rays not implemeted:
-        ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
-                                            jt.Var(np.load("mask_outbbox.npy")),\
-                                            jt.array(np.load("ray_id.npy")).int64(),\
-                                            jt.array(np.load("step_id.npy")).int64()
-        # ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils.sample_pts_on_rays(
-        #     rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
+        # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
+        #                                     jt.Var(np.load("mask_outbbox.npy")),\
+        #                                     jt.array(np.load("ray_id.npy")).int64(),\
+        #                                     jt.array(np.load("step_id.npy")).int64()
+        ray_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max = render_utils.sample_pts_on_rays(
+            rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)
         #TODO:
         # bad operand type for unary ~: 'jittor_core.Var'
         # ~ op not supported
@@ -414,6 +414,8 @@ class DirectVoxGO(jt.nn.Module):
         if self.rgbnet_full_implicit:
             pass
         else:
+            #debug
+            #k0=jt.Var(np.load("k0.npy"))
             k0 = self.k0(ray_pts)
         jt.sync_all()
         if self.rgbnet is None:

@@ -238,13 +238,13 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     
     N_steps_cumsum = jt.cumsum(N_steps,0) # 211 TODO check
     
-    total_len = int(N_steps.data.sum().item()) # 212 TODO check
+    total_len = N_steps.data.sum().item() # 212 TODO check
     
     ray_id = jt.zeros((total_len),dtype="int64")
     
     # __set_1_at_ray_seg_start
     # jt.code((1,),"float32", [ray_id,N_steps_cumsum], cuda_header='''
-    jt.code([],[ray_id,N_steps_cumsum], cuda_header='''
+    jt.code(inputs=[N_steps_cumsum],outputs=[ray_id], cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -268,7 +268,7 @@ __global__ void __set_1_at_ray_seg_start(
     ''', 
     cuda_src=f'''
     @alias(ray_id, out0)
-    @alias(N_steps_cumsum, out1)
+    @alias(N_steps_cumsum, in0)
     
     __set_1_at_ray_seg_start<<<({n_rays}+{threads}-1)/{threads}, {threads}>>>(
       ray_id_p, N_steps_cumsum_p, {n_rays});
@@ -278,13 +278,13 @@ __global__ void __set_1_at_ray_seg_start(
             printf("Error in __set_1_at_ray_seg_start: %s\\n", cudaGetErrorString(err));
     
     ''')
-    
+    #bugs: ray_id.sum() casue error
     ray_id = jt.cumsum(ray_id,0)
 
     step_id = jt.empty((total_len,),dtype=ray_id.dtype)
     
     # __set_step_id
-    jt.code((1,),"float32", [step_id, ray_id, N_steps_cumsum], cuda_header='''
+    jt.code(inputs=[ray_id,N_steps_cumsum], outputs=[step_id], cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -310,13 +310,10 @@ __global__ void __set_step_id(
 }            
     ''', 
     cuda_src=f'''
-    @alias(step_id, in0)
-    @alias(ray_id, in1)
-    @alias(N_steps_cumsum, in2)
-    @alias(place_holder, out0)
+    @alias(ray_id, in0)
+    @alias(N_steps_cumsum, in1)
+    @alias(step_id, out0)
 
-    cudaMemsetAsync(out0_p, 0, out0->size);
-    
     __set_step_id<<<({total_len}+{threads}-1)/{threads}, {threads}>>>(
       step_id_p, ray_id_p, N_steps_cumsum_p, {total_len});
 
@@ -333,14 +330,14 @@ __global__ void __set_step_id(
     mask_outbbox = jt.empty((total_len,), dtype='bool')
     
     
-    jt.code((1,),"float32",[rays_start, rays_dir, xyz_min, xyz_max, ray_id, step_id, rays_pts, mask_outbbox],
+    jt.code(inputs=[rays_start, rays_dir, xyz_min, xyz_max, ray_id, step_id],outputs=[mask_outbbox,rays_pts],
     cuda_header='''
     
 #include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <vector>
-
+using jittor::int64;
 namespace{
 
 /*
@@ -389,11 +386,9 @@ __global__ void sample_pts_on_rays_cuda_kernel(
     @alias(xyz_max, in3)
     @alias(ray_id, in4)
     @alias(step_id, in5)
-    @alias(rays_pts, in6)
-    @alias(mask_outbbox, in7)
-    @alias(place_holder, out0)
-
-    cudaMemsetAsync(out0_p, 0, out0->size);
+    @alias(mask_outbbox, out0)
+    @alias(rays_pts, out1)  
+  
 
     sample_pts_on_rays_cuda_kernel<float32><<<({total_len}+{threads}-1)/{threads}, {threads}>>>(
         rays_start_p,
@@ -749,8 +744,8 @@ def alpha2weight(alpha, ray_id, n_rays):
     assert(ray_id.ndim==1)
     assert(alpha.numel()==ray_id.numel())
     
-    n_pts = alpha.size(0)
-    threads = 512
+    n_pts =  jt.int64(alpha.size(0))
+    threads = jt.int64(512)
     
     weight = jt.zeros_like(alpha)
     T = jt.ones_like(alpha)
@@ -761,7 +756,7 @@ def alpha2weight(alpha, ray_id, n_rays):
     if (n_pts== 0):
           return weight,T,alphainv_last,i_start,i_end
     
-    jt.code(inputs=[ray_id,i_start,i_end],outputs=[ray_id,i_start,i_end],cuda_header='''
+    jt.code(inputs=[ray_id],outputs=[i_start,i_end],cuda_header='''
             
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -776,7 +771,7 @@ __global__ void __set_i_for_segment_start_end(
     const int n_pts,
     int64* __restrict__ i_start,
     int64* __restrict__ i_end) {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const int64 index = blockIdx.x * blockDim.x + threadIdx.x;
   if(0<index && index<n_pts && ray_id[index]!=ray_id[index-1]) {
     i_start[ray_id[index]] = index;
     i_end[ray_id[index-1]] = index;
@@ -788,12 +783,11 @@ __global__ void __set_i_for_segment_start_end(
     ''', 
     cuda_src=f'''
     @alias(ray_id, in0)
-    @alias(i_start, in1)
-    @alias(i_end, in2)
+    @alias(i_start, out0)
+    @alias(i_end, out1)
     
     __set_i_for_segment_start_end<<<({n_pts}+{threads}-1)/{threads}, {threads}>>>(
           ray_id_p, {n_pts}, i_start_p, i_end_p);
-    i_end_p[ray_id_p[{n_pts}-1]] = {n_pts};
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
         printf("Error in __set_i_for_segment_start_end: %s\\n", cudaGetErrorString(err));
@@ -803,8 +797,8 @@ __global__ void __set_i_for_segment_start_end(
     
     
     
-    
-    jt.code(inputs=[alpha,weight,T,alphainv_last,i_start,i_end],outputs=[alpha,weight,T,alphainv_last,i_start,i_end],
+    i_end[ray_id[n_pts-1]]=n_pts
+    jt.code(inputs=[alpha,i_start],outputs=[weight,T,alphainv_last,i_end],
     cuda_header='''
 
 #include <cuda.h>
@@ -816,50 +810,51 @@ using  jittor::int64;
 
 namespace{
 
-template <typename scalar_t>
-__global__ void alpha2weight_cuda_kernel(
-    scalar_t* __restrict__ alpha,
-    const int n_rays,
-    scalar_t* __restrict__ weight,
-    scalar_t* __restrict__ T,
-    scalar_t* __restrict__ alphainv_last,
-    int64* __restrict__ i_start,
-    int64* __restrict__ i_end) {
+  template <typename scalar_t>
+  __global__ void alpha2weight_cuda_kernel(
+      scalar_t* __restrict__ alpha,
+      const int n_rays,
+      scalar_t* __restrict__ weight,
+      scalar_t* __restrict__ T,
+      scalar_t* __restrict__ alphainv_last,
+      int64* __restrict__ i_start,
+      int64* __restrict__ i_end) {
 
-  const int i_ray = blockIdx.x * blockDim.x + threadIdx.x;
-  if(i_ray<n_rays) {
-    const int i_s = i_start[i_ray];
-    const int i_e_max = i_end[i_ray];
+    const int i_ray = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i_ray<n_rays) {
+      const int64 i_s = i_start[i_ray];
+      const int64 i_e_max = i_end[i_ray];
 
-    float T_cum = 1.;
-    int i;
-    for(i=i_s; i<i_e_max; ++i) {
-      T[i] = T_cum;
-      weight[i] = T_cum * alpha[i];
-      T_cum *= (1. - alpha[i]);
-      if(T_cum<1e-3) {
-        i+=1;
-        break;
+      float T_cum = 1.;
+      int64 i;
+      for(i=i_s; i<i_e_max; ++i) {
+        T[i] = T_cum;
+        weight[i] = T_cum * alpha[i];
+        T_cum *= (1. - alpha[i]);
+        if(T_cum<1e-3) {
+          i+=1;
+          break;
+        }
       }
+      i_end[i_ray] = i;
+      alphainv_last[i_ray] = T_cum;
     }
-    i_end[i_ray] = i;
-    alphainv_last[i_ray] = T_cum;
-  }
-}  
+  }  
+}
     
     ''',
     cuda_src=f'''
     @alias(alpha, in0)
-    @alias(weight, in1)
-    @alias(T, in2)
-    @alias(alphainv_last, in3)    
-    @alias(i_start, in4)
-    @alias(i_end, in5)
+    @alias(i_start, in1)
+    @alias(weight, out0)
+    @alias(T, out1)
+    @alias(alphainv_last, out2)    
+    @alias(i_end, out3)
     
     
     const int blocks = ({n_rays} + {threads} - 1) / {threads};
     
-    alpha2weight_cuda_kernel<float32><<<blocks, threads>>>(
+    alpha2weight_cuda_kernel<float32><<<blocks, {threads}>>>(
         alpha_p,
         {n_rays},
         weight_p,
