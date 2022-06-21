@@ -233,15 +233,10 @@ def sample_pts_on_rays(rays_o, rays_d, xyz_min, xyz_max, near, far, stepdist):
     t_min,t_max = infer_t_minmax(rays_o, rays_d, xyz_min, xyz_max, near, far)
     # match with torch OK
     N_steps = infer_n_samples(rays_d, t_min, t_max, stepdist)
-    
     # N_steps_cumsum = N_steps.cumsum(0) # 211 TODO check
-    # 
     N_steps_cumsum = jt.cumsum(N_steps,0) # 211 TODO check
-    
     total_len = N_steps.data.sum().item() # 212 TODO check
-    
     ray_id = jt.zeros((total_len),dtype="int64")
-    
     # __set_1_at_ray_seg_start
     # jt.code((1,),"float32", [ray_id,N_steps_cumsum], cuda_header='''
     jt.code(inputs=[N_steps_cumsum],outputs=[ray_id], cuda_header='''
@@ -282,8 +277,8 @@ __global__ void __set_1_at_ray_seg_start(
     ray_id = jt.cumsum(ray_id,0)
 
     step_id = jt.empty((total_len,),dtype=ray_id.dtype)
-    
-    # __set_step_id
+
+    # __set_step_id  
     jt.code(inputs=[ray_id,N_steps_cumsum], outputs=[step_id], cuda_header='''
             
 #include <cuda.h>
@@ -314,21 +309,24 @@ __global__ void __set_step_id(
     @alias(N_steps_cumsum, in1)
     @alias(step_id, out0)
 
-    __set_step_id<<<({total_len}+{threads}-1)/{threads}, {threads}>>>(
-      step_id_p, ray_id_p, N_steps_cumsum_p, {total_len});
+    const int total_len = step_id_shape0;
+    
+    __set_step_id<<<(total_len+{threads}-1)/{threads}, {threads}>>>(
+      step_id_p, ray_id_p, N_steps_cumsum_p, total_len);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
             printf("Error in __set_step_id: %s\\n", cudaGetErrorString(err));
     
     ''')
-    
+
     rays_start,rays_dir = infer_ray_start_dir(rays_o, rays_d, t_min)
     
     rays_pts = jt.empty((total_len,3),rays_o.dtype)
     
     mask_outbbox = jt.empty((total_len,), dtype='bool')
     
+    jit_total_len = jt.int64(total_len)
     
     jt.code(inputs=[rays_start, rays_dir, xyz_min, xyz_max, ray_id, step_id],outputs=[mask_outbbox,rays_pts],
     cuda_header='''
@@ -389,15 +387,15 @@ __global__ void sample_pts_on_rays_cuda_kernel(
     @alias(mask_outbbox, out0)
     @alias(rays_pts, out1)  
   
-
-    sample_pts_on_rays_cuda_kernel<float32><<<({total_len}+{threads}-1)/{threads}, {threads}>>>(
+    const int total_len = step_id_shape0;
+    sample_pts_on_rays_cuda_kernel<float32><<<(total_len+{threads}-1)/{threads}, {threads}>>>(
         rays_start_p,
         rays_dir_p,
         xyz_min_p,
         xyz_max_p,
         ray_id_p,
         step_id_p,
-        {stepdist}, {total_len},
+        {stepdist}, total_len,
         rays_pts_p,
         mask_outbbox_p);
 
@@ -405,7 +403,6 @@ __global__ void sample_pts_on_rays_cuda_kernel(
     if (err != cudaSuccess) 
             printf("Error in sample_pts_on_rays: %s\\n", cudaGetErrorString(err));
     ''')
-    
     return rays_pts, mask_outbbox, ray_id, step_id, N_steps, t_min, t_max
     
 def maskcache_lookup(world, xyz, xyz2ijk_scale, xyz2ijk_shift):
