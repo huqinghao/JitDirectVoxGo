@@ -291,7 +291,7 @@ __global__ void __set_1_at_ray_seg_start(
 #include <iostream>
 #include <vector>
 
-using jittor::int64
+using jittor::int64;
 
 namespace{     
 

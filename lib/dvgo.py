@@ -314,8 +314,8 @@ class DirectVoxGO(jt.nn.Module):
         stepdist = stepsize * self.voxel_size
         #TODO: not implemented
         
-        # ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
-        #         rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
+        ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
+                rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
 
         ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
                                             jt.Var(np.load("mask_outbbox.npy")),\

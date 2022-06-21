@@ -405,6 +405,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 cnt=jt.float32(np.load("count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
+            model.mask_cache.mask = model.mask_cache.mask.bool()
         per_voxel_init()
 
     if cfg_train.maskout_lt_nviews > 0:
@@ -499,7 +500,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rgbper = (render_result['raw_rgb'] - target[render_result['ray_id']]).pow(2).sum(-1)
             rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
             loss += cfg_train.weight_rgbper * rgbper_loss
-        loss.backward()
+        optimizer.backward(loss)
 
         if global_step<cfg_train.tv_before and global_step>cfg_train.tv_after and global_step%cfg_train.tv_every==0:
             if cfg_train.weight_tv_density>0:

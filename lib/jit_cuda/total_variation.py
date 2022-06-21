@@ -62,20 +62,20 @@ __global__ void total_variation_add_grad_cuda_kernel(
     wy_6 = {wy} / 6;
     wz_6 = {wz} / 6;
 
-    if({dense_mode}) {
+    if({dense_mode}) {{
         total_variation_add_grad_cuda_kernel<float32,true><<<blocks, threads>>>(
             param_p,
             grad_p,
             wx_6, wy_6, wz_6,
             sz_i, sz_j, sz_k, N);          
-    }
-    else {
+    }}
+    else {{
         total_variation_add_grad_cuda_kernel<float32,false><<<blocks, threads>>>(
             param_p,
             grad_p,
             wx_6, wy_6, wz_6,
             sz_i, sz_j, sz_k, N);    
-    }
+    }}
 
 
     cudaError_t err = cudaGetLastError();
