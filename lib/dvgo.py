@@ -389,7 +389,7 @@ class DirectVoxGO(jt.nn.Module):
 
         # query for alpha w/ post-activation
         density = self.density(ray_pts)
-        # alpha2weight has some mismatch with torch (err about 1e-7)
+        # alpha2weight has some mismatch with torch (err about 1e-7) # TODO
         alpha = self.activate_density(density, interval)
         if self.fast_color_thres > 0:
             mask = (alpha > self.fast_color_thres)
