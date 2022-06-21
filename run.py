@@ -11,7 +11,7 @@ import numpy as np
 # import jt.nn.functional as F
 import jittor as jt
 import jittor.nn as nn
-
+from lib.utils import randint
 #from lib import utils, dvgo, dcvgo, dmpigo
 from lib import utils, dvgo
 
@@ -448,7 +448,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rays_d = rays_d_tr[sel_i]
             viewdirs = viewdirs_tr[sel_i]
         elif cfg_train.ray_sampler == 'random':
-            from lib.utils import randint
+           
             #TODO: for debug
             # import torch
             # sel_b = jt.Var(np.load("sel_b.npy"))
@@ -469,7 +469,8 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         #     rays_o = rays_o.to(device)
         #     rays_d = rays_d.to(device)
         #     viewdirs = viewdirs.to(device)
-
+        # print('get_training_rays_flatten: finish (eps time:', eps_time, 'sec)')
+        
         # volume rendering
         render_result = model(
             rays_o, rays_d, viewdirs,

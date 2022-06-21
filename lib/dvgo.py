@@ -296,7 +296,8 @@ class DirectVoxGO(jt.nn.Module):
     def activate_density(self, density, interval=None):
         interval = interval if interval is not None else self.voxel_size_ratio
         shape = density.shape
-        return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
+        # use object instead of Apply(Function)
+        return Raw2Alpha()(density.flatten(), self.act_shift, interval).reshape(shape)
         #debug
         #return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
         
@@ -399,8 +400,8 @@ class DirectVoxGO(jt.nn.Module):
             alpha = alpha[mask]
 
         # compute accumulated transmittance
-        #TODO:
-        weights, alphainv_last = Alphas2Weights.apply(alpha, ray_id, N)
+        #TODO:use object instead of apply(Function)
+        weights, alphainv_last = Alphas2Weights()(alpha, ray_id, N)
         
         if self.fast_color_thres > 0:
             mask = (weights > self.fast_color_thres)
