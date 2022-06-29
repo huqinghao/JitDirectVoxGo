@@ -58,6 +58,7 @@ def up_sampler_3d_forward_cuda(
 #include <vector>
 
 using namespace std;
+using jittor::float32;
 
 namespace{
 
@@ -67,20 +68,20 @@ __global__ void upsample_trilinear3d_out_frame(
     const accscalar_t rdepth,
     const accscalar_t rheight,
     const accscalar_t rwidth,
-    const std::vector<int> input_shape,
-    const std::vector<int> output_shape,
+    const int batch_size, const int channel_size, const int input_depth, const int input_height, const int input_width,
+    const int output_depth, const int output_height, const int output_width,
     const scalar_t* __restrict__ idata,
     scalar_t* __restrict__ odata) {
   int index = threadIdx.x + blockIdx.x * blockDim.x;
 
-  const int batchsize = input_shape[0]; 
-  const int channels = input_shape[1]; 
-  const int depth1 = input_shape[2]; 
-  const int height1 = input_shape[3]; 
-  const int width1 = input_shape[4]; 
-  const int depth2 = output_shape[2];
-  const int height2 = output_shape[3];
-  const int width2 = output_shape[4];
+  const int batchsize = batch_size; 
+  const int channels = channel_size; 
+  const int depth1 = input_depth; 
+  const int height1 = input_height; 
+  const int width1 = input_width; 
+  const int depth2 = output_depth;
+  const int height2 = output_height;
+  const int width2 = output_width;
 
   if (index < n) {
     const int w2 = (index % (height2 * width2)) %  width2; 
@@ -158,21 +159,23 @@ __global__ void upsample_trilinear3d_out_frame(
     const int batch_size = input_shape0;
     const int channel_size = input_shape1;
     
-    const std::vector<int> in_shape = ({batch_size, channel_size, input_depth, input_height, input_width});
-    const std::vector<int> out_shape = ({batch_size, channel_size, output_depth, output_height, output_width});
-    
     const int num_kernels = output_depth * output_height * output_width;
     const int num_threads = 512;
     const int blocks = (num_kernels + num_threads - 1 ) / num_threads;
     
     using accscalar_t = float32;
-    const accscalar_t rdepth = (input_depth - 1) / (output_depth - 1);
-    const accscalar_t rheight = (input_height - 1) / (output_height - 1);
-    const accscalar_t rwidth = (input_width - 1) / (output_width - 1);
+    const float32 rdepth = (input_depth - 1) / (output_depth - 1);
+    const float32 rheight = (input_height - 1) / (output_height - 1);
+    const float32 rwidth = (input_width - 1) / (output_width - 1);
     
-    upsample_trilinear3d_out_frame<float32,accscalar_t><<<blocks, num_threads>>>(
-        num_kernels,rdepth,rheight,rwidth,in_shape,out_shape,input_p,output_p
-    );
+    upsample_trilinear3d_out_frame<float32,float32><<<blocks, num_threads>>>(
+        num_kernels,rdepth,rheight,rwidth,
+        batch_size, channel_size,input_depth,input_height,input_width,
+        output_depth,output_height,output_width,
+        input_p,output_p);
     
-    
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) 
+        printf("Error in upsample3d: %s\\n", cudaGetErrorString(err));
+        
     ''')
