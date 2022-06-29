@@ -523,12 +523,11 @@ __global__ void raw2alpha_cuda_kernel(
 
   const int i_pt = blockIdx.x * blockDim.x + threadIdx.x;
   if(i_pt<n_pts) {
-    const scalar_t e = exp(density[i_pt] + shift); // can be inf
+    const scalar_t e = expf(float(density[i_pt] + shift)); // can be inf
     exp_d[i_pt] = e;
-    alpha[i_pt] = 1 - pow(1 + e, -interval);
+    alpha[i_pt] = 1.0f - powf(float(1.0f) + float(e), float(-interval));
   }
 }
-
 }  
     
   ''',
@@ -544,9 +543,6 @@ __global__ void raw2alpha_cuda_kernel(
   if(n_pts!=0) {{ 
     const int threads = 512;
     const int blocks = (n_pts + threads - 1) / threads;
-    
-
-    
     raw2alpha_cuda_kernel<float32><<<blocks, threads>>>(
       density_p,
       {shift}, {interval}, n_pts,
@@ -559,6 +555,7 @@ __global__ void raw2alpha_cuda_kernel(
   if (err != cudaSuccess) 
           printf("Error in raw2alpha: %s\\n", cudaGetErrorString(err));
   ''')
+ 
     
     
 
