@@ -6,39 +6,13 @@ def interpolate(X, size=None, scale_factor=None, mode='trilinear', align_corners
     if mode != "trilinear":
         return jt.nn.interpolate(X,size,scale_factor,mode,align_corners,tf_mode)
     else:
-        return up_sample3d(X, size, mode, align_corners, tf_mode)
-
-def up_sample3d(
-    input,
-    size,
-    mode: str = "trilinear",
-    align_corners: bool = None,
-    tf_mode=False,
-):
-    if mode != "trilinear" :
-        raise ValueError(
-            "nn.functional.grid_sample(): expected mode to be "
-            "'bilinear', 'nearest' or 'bicubic', but got: '{}'".format(mode))
-
-
-    if align_corners is None:
-        print(
-            "Default grid_sample and affine_grid behavior has changed "
-            "to align_corners=False since 1.3.0. Please specify "
-            "align_corners=True if the old behavior is desired. "
-            "See the documentation of grid_sample for details."
-        )
-        align_corners = False
-
-    return UpSampler3d()(input, size, align_corners)
-
-from jittor import Function
+        return UpSampler3d()(X, size, align_corners)
 
 class UpSampler3d(Function):
 
     def execute(self, input, size, align_corners):
               
-        return up_sampler_3d_forward_cuda(input,size,align_corners)
+        return up_sampler_3d_forward_cuda(input,size,align_corners)[0]
 
 
 def up_sampler_3d_forward_cuda(
@@ -164,14 +138,14 @@ __global__ void upsample_trilinear3d_out_frame(
         
         const int out_index = n*channels*depth2*height2*width2 + c*depth2*height2*width2 + t2*height2*width2 + h2*width2 + w2;
         odata[out_index] = static_cast<scalar_t>(val);
-        
-        
+
+
       }
     }
   }
 }   
 }
-    
+
     ''',
     cuda_src='''
     @alias(input, in0)
@@ -207,3 +181,18 @@ __global__ void upsample_trilinear3d_out_frame(
         printf("Error in upsample3d: %s\\n", cudaGetErrorString(err));
         
     ''')
+
+
+
+if __name__ == '__main__':
+    import numpy as np 
+    input = np.random.rand(1,1,99,101,99).astype("float32").clip(0.1,0.8)
+    np.save("npy/interpolate_input.npy",input)
+    
+    input_jittor = jt.array(input)
+    res = interpolate(input_jittor,jt.array((49,50,50)),mode='trilinear',align_corners=True)
+    
+    print(res.shape)
+    
+    
+    
