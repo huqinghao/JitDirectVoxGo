@@ -10,7 +10,7 @@ from jittor import init
 import jittor as jt
 import jittor.nn as nn
 # import jt.nn.functional as F
-from .jit_cuda import render_utils,total_variation
+from .jit_cuda import render_utils,total_variation,up_sample3d
 # from jt.utils.cpp_extension import load
 #TODO
 # parent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -63,17 +63,20 @@ class DenseGrid(nn.Module):
         # TODO
         # nn.grid_sample too slow 
         out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+        # out = jt.randn((*shape,self.channels))
         # out= jt.Var(np.load("dense_grid.npy"))
         out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)
         if self.channels == 1:
             out = out.squeeze(-1)
         return out
-
+    
     def scale_volume_grid(self, new_world_size):
         if self.channels == 0:
             self.grid = jt.zeros([1, self.channels, *new_world_size])
         else:
-            self.grid =nn.interpolate(self.grid, size=tuple(new_world_size), \
+            # self.grid = nn.interpolate(self.grid, size=tuple(new_world_size), \
+            #     mode='trilinear', align_corners=True)
+            self.grid = up_sample3d.interpolate(self.grid, size=tuple(new_world_size), \
                 mode='trilinear', align_corners=True)
 
     def total_variation_add_grad(self, wx, wy, wz, dense_mode):
