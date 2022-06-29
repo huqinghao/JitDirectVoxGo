@@ -95,8 +95,13 @@ __global__ void upsample_trilinear3d_out_frame(
 
       for (int n = 0; n < batchsize; n++) {
         for (int c = 0; c < channels; ++c) {
-          const scalar_t val = idata[n][c][t1][h1][w1];
-          odata[n][c][t2][h2][w2] = val;
+        //  const scalar_t val = idata[n][c][t1][h1][w1];
+        // odata[n][c][t2][h2][w2] = val;
+        
+        const int in_index = n*channels*depth1*height1*width1 + c*depth1*height1*width1 + t1*height1*width1 + h1*width1 + w1 ;
+        const int out_index = n*channels*depth2*height2*width2 + c*depth2*height2*width2 + t2*height2*width2 + h2*width2 + w2 ;
+        const scalar_t val = idata[in_index];
+        odata[out_index] = val;
         }
       }
       return;
@@ -122,21 +127,45 @@ __global__ void upsample_trilinear3d_out_frame(
     
     for (int n = 0; n < batchsize; n++) {
       for (int c = 0; c < channels; ++c) {
+
+        // const accscalar_t val = t0lambda *
+        //         (h0lambda *
+        //              (w0lambda * idata[n][c][t1][h1][w1] +
+        //               w1lambda * idata[n][c][t1][h1][w1 + w1p]) +
+        //          h1lambda *
+        //              (w0lambda * idata[n][c][t1][h1 + h1p][w1] +
+        //               w1lambda * idata[n][c][t1][h1 + h1p][w1 + w1p])) +
+        //     t1lambda *
+        //         (h0lambda *
+        //              (w0lambda * idata[n][c][t1 + t1p][h1][w1] +
+        //               w1lambda * idata[n][c][t1 + t1p][h1][w1 + w1p]) +
+        //          h1lambda *
+        //              (w0lambda * idata[n][c][t1 + t1p][h1 + h1p][w1] +
+        //               w1lambda * idata[n][c][t1 + t1p][h1 + h1p][w1 + w1p]));
+        // odata[n][c][t2][h2][w2] = static_cast<scalar_t>(val);
+        
+        // const int in_index = n*channels*depth1*height1*width1 + c*depth1*height1*width1 + t1*height1*width1 + h1*width1 + w1 ;
+        
         const accscalar_t val = t0lambda *
                 (h0lambda *
-                     (w0lambda * idata[n][c][t1][h1][w1] +
-                      w1lambda * idata[n][c][t1][h1][w1 + w1p]) +
+                     (w0lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + t1*height1*width1 + h1*width1 + w1] +
+                      w1lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + t1*height1*width1 + h1*width1 + w1 + w1p]) +
                  h1lambda *
-                     (w0lambda * idata[n][c][t1][h1 + h1p][w1] +
-                      w1lambda * idata[n][c][t1][h1 + h1p][w1 + w1p])) +
+                     (w0lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + t1*height1*width1 + (h1+h1p)*width1 + w1] +
+                      w1lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + t1*height1*width1 + (h1+h1p)*width1 + w1 + w1p])) +
             t1lambda *
                 (h0lambda *
-                     (w0lambda * idata[n][c][t1 + t1p][h1][w1] +
-                      w1lambda * idata[n][c][t1 + t1p][h1][w1 + w1p]) +
+                     (w0lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + (t1+t1p)*height1*width1 + h1*width1 + w1] +
+                      w1lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + (t1+t1p)*height1*width1 + h1*width1 + w1 + w1p]) +
                  h1lambda *
-                     (w0lambda * idata[n][c][t1 + t1p][h1 + h1p][w1] +
-                      w1lambda * idata[n][c][t1 + t1p][h1 + h1p][w1 + w1p]));
-        odata[n][c][t2][h2][w2] = static_cast<scalar_t>(val);
+                     (w0lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + (t1+t1p)*height1*width1 + (h1+h1p)*width1 + w1] +
+                      w1lambda * idata[n*channels*depth1*height1*width1 + c*depth1*height1*width1 + (t1+t1p)*height1*width1 + (h1+h1p)*width1 + w1 + w1p]));
+        
+        
+        const int out_index = n*channels*depth2*height2*width2 + c*depth2*height2*width2 + t2*height2*width2 + h2*width2 + w2;
+        odata[out_index] = static_cast<scalar_t>(val);
+        
+        
       }
     }
   }
@@ -163,7 +192,6 @@ __global__ void upsample_trilinear3d_out_frame(
     const int num_threads = 512;
     const int blocks = (num_kernels + num_threads - 1 ) / num_threads;
     
-    using accscalar_t = float32;
     const float32 rdepth = (input_depth - 1) / (output_depth - 1);
     const float32 rheight = (input_height - 1) / (output_height - 1);
     const float32 rwidth = (input_width - 1) / (output_width - 1);
