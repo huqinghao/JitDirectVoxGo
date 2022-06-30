@@ -11,10 +11,8 @@ import numpy as np
 # import jt.nn.functional as F
 import jittor as jt
 import jittor.nn as nn
-from lib.utils import randint
 #from lib import utils, dvgo, dcvgo, dmpigo
 from lib import utils, dvgo
-
 from lib.load_data import load_data
 
 #TODO: 
@@ -185,11 +183,12 @@ def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far)
     # no nan error in gpu mode, it seems that the bug hiddens in the cpu op
     # xyz_min = jt.array([np.inf, np.inf, np.inf]).stop_grad()
     # xyz_max = (-xyz_min).stop_grad()
-    #
+    #   
     max_val=np.finfo(np.float16).max
     min_val=np.finfo(np.float16).min
     xyz_min = jt.array([max_val, max_val,max_val]).stop_grad()
     xyz_max = jt.array([min_val, min_val,min_val]).stop_grad()
+
     for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w,
@@ -404,7 +403,8 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                         stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
                         irregular_shape=data_dict['irregular_shape'])
             else:
-                cnt=jt.float32(np.load("count.npy"))
+                cnt=jt.float32(np.load(f"npy/Easyship_count.npy"))
+                # cnt=jt.float32(np.load(f"count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
             model.mask_cache.mask = model.mask_cache.mask.bool()
@@ -430,7 +430,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         if global_step in cfg_train.pg_scale:
             n_rest_scales = len(cfg_train.pg_scale)-cfg_train.pg_scale.index(global_step)-1
             cur_voxels = int(cfg_model.num_voxels / (2**n_rest_scales))
-            if isinstance(model, (dvgo.DirectVoxGO, dcvgo.DirectContractedVoxGO)):
+            if isinstance(model, (dvgo.DirectVoxGO)):
                 model.scale_volume_grid(cur_voxels)
             elif isinstance(model, dmpigo.DirectMPIGO):
                 model.scale_volume_grid(cur_voxels, model.mpi_depth)
@@ -454,9 +454,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             # sel_b = jt.Var(np.load("sel_b.npy"))
             # sel_r = jt.Var(np.load("sel_r.npy"))
             # sel_c = jt.Var(np.load("sel_c.npy"))
-            sel_b = randint(rgb_tr.shape[0], [cfg_train.N_rand])
-            sel_r = randint(rgb_tr.shape[1], [cfg_train.N_rand])
-            sel_c = randint(rgb_tr.shape[2], [cfg_train.N_rand])
+            
+            sel_b = jt.randint(0, rgb_tr.shape[0], [cfg_train.N_rand])
+            sel_r = jt.randint(0, rgb_tr.shape[1], [cfg_train.N_rand])
+            sel_c = jt.randint(0, rgb_tr.shape[2], [cfg_train.N_rand])
             target = rgb_tr[sel_b, sel_r, sel_c]
             rays_o = rays_o_tr[sel_b, sel_r, sel_c]
             rays_d = rays_d_tr[sel_b, sel_r, sel_c]

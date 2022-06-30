@@ -55,7 +55,7 @@ class DirectVoxGO(jt.nn.Module):
         # determine the density bias shift
         self.alpha_init = alpha_init
         #self.register_buffer('act_shift', jt.FloatTensor([np.log(1/(1-alpha_init) - 1)]))
-        self.act_shift=jt.float32([np.log(1/(1-alpha_init) - 1)])
+        self.act_shift=jt.float32([np.log(1/(1-alpha_init) - 1)]).stop_grad()
 
         print('dvgo: set density bias shift to', self.act_shift)
 
@@ -242,9 +242,6 @@ class DirectVoxGO(jt.nn.Module):
         heart_msg=0
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
             heart_msg+=1
-            # print("???", heart_msg)
-            if heart_msg%10==0:
-                print("heart msg:{}".format(heart_msg))
             ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
             optimizer=jt.optim.SGD([ones.grid],0)
             if irregular_shape:
@@ -297,7 +294,8 @@ class DirectVoxGO(jt.nn.Module):
         interval = interval if interval is not None else self.voxel_size_ratio
         shape = density.shape
         # use object instead of Apply(Function)
-        return Raw2Alpha()(density.flatten(), self.act_shift, interval).reshape(shape)
+        alpha = Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
+        return alpha
         #debug
         #return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
         
@@ -371,11 +369,11 @@ class DirectVoxGO(jt.nn.Module):
         @viewdirs: [N, 3] viewing direction to compute positional embedding for MLP.
         '''
         assert len(rays_o.shape)==2 and rays_o.shape[-1]==3, 'Only suuport point queries in [N, 3] format'
-
+        
         ret_dict = {}
         N = len(rays_o)
 
-        # sample points on rays
+        # sample points on rays: no problem
         ray_pts, ray_id, step_id = self.sample_ray(
                 rays_o=rays_o, rays_d=rays_d, **render_kwargs)
         interval = render_kwargs['stepsize'] * self.voxel_size_ratio
@@ -388,7 +386,7 @@ class DirectVoxGO(jt.nn.Module):
             step_id = step_id[mask]
 
         # query for alpha w/ post-activation
-        density = self.density(ray_pts)
+        density = self.density(ray_pts) # no problem
         # alpha2weight has some mismatch with torch (err about 1e-7) # TODO
         alpha = self.activate_density(density, interval)
         if self.fast_color_thres > 0:
@@ -401,7 +399,7 @@ class DirectVoxGO(jt.nn.Module):
 
         # compute accumulated transmittance
         #TODO:use object instead of apply(Function)
-        weights, alphainv_last = Alphas2Weights()(alpha, ray_id, N)
+        weights, alphainv_last = Alphas2Weights()(alpha, ray_id, N) # weights also different due to alpha
         
         if self.fast_color_thres > 0:
             mask = (weights > self.fast_color_thres)
@@ -486,6 +484,7 @@ class Raw2Alpha(Function):
               = 1 - (1 + exp(density + shift)) ^ (-interval)
         '''
         exp, alpha = render_utils.raw2alpha(density, shift, interval)
+        # python_alpha = raw2alpha(density,shift,interval)
         if density.requires_grad:
             self.exp=exp
             self.interval = interval
