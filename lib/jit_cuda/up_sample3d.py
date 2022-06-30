@@ -1,5 +1,7 @@
 from jittor import Function
 import jittor as jt
+import torch
+import torch.nn.functional as F
 
 def interpolate(X, size=None, scale_factor=None, mode='trilinear', align_corners=False, tf_mode=False):
     
@@ -12,7 +14,7 @@ class UpSampler3d(Function):
 
     def execute(self, input, size, align_corners):
               
-        return up_sampler_3d_forward_cuda(input,size,align_corners)[0]
+        return up_sampler_3d_forward_cuda(input,size,align_corners)
 
 
 def up_sampler_3d_forward_cuda(
@@ -24,7 +26,7 @@ def up_sampler_3d_forward_cuda(
         raise ValueError("Not support Align Corner set False Now!")
     
     output = jt.zeros([i for i in input.shape[:2]] + [i.item() for i in output_size])
-    return jt.code(inputs=[input],outputs=[output],
+    jt.code(inputs=[input],outputs=[output],
     cuda_header='''
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -166,9 +168,9 @@ __global__ void upsample_trilinear3d_out_frame(
     const int num_threads = 512;
     const int blocks = (num_kernels + num_threads - 1 ) / num_threads;
     
-    const float32 rdepth = (input_depth - 1) / (output_depth - 1);
-    const float32 rheight = (input_height - 1) / (output_height - 1);
-    const float32 rwidth = (input_width - 1) / (output_width - 1);
+    const float32 rdepth = (input_depth - 1)*1.0 / (output_depth - 1);
+    const float32 rheight = (input_height - 1)*1.0 / (output_height - 1);
+    const float32 rwidth = (input_width - 1)*1.0 / (output_width - 1);
     
     upsample_trilinear3d_out_frame<float32,float32><<<blocks, num_threads>>>(
         num_kernels,rdepth,rheight,rwidth,
@@ -181,18 +183,27 @@ __global__ void upsample_trilinear3d_out_frame(
         printf("Error in upsample3d: %s\\n", cudaGetErrorString(err));
         
     ''')
+    
+    return output
 
 
 
 if __name__ == '__main__':
     import numpy as np 
-    input = np.random.rand(1,1,99,101,99).astype("float32").clip(0.1,0.8)
+    jt.flags.use_cuda = 2
+    input = np.random.rand(1,1,89,100,120).astype("float32").clip(0.1,0.8)
     np.save("npy/interpolate_input.npy",input)
     
     input_jittor = jt.array(input)
-    res = interpolate(input_jittor,jt.array((49,50,50)),mode='trilinear',align_corners=True)
+    res_jittor = interpolate(input_jittor,jt.array((130,248,355)),mode='trilinear',align_corners=True)
     
-    print(res.shape)
+    res_torch = F.interpolate(torch.from_numpy(input),(130,248,355),mode='trilinear',align_corners=True)
+        
+    diff = res_torch.numpy() - res_jittor.data
+    print(diff)
+    
+    
+    print(diff.shape)
     
     
     
