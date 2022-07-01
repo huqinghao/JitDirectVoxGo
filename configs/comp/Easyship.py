@@ -9,5 +9,5 @@ data = dict(
     rand_bkgd=False,
     half_res=False,
     near=0.5,
-    far=20.,
+    far=6.,
 )  

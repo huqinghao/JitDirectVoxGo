@@ -8,7 +8,7 @@ data = dict(
     white_bkgd=False,
     half_res=False,
     near=2.,
-    far=80.,
+    far=20.,
 )  
 coarse_train = dict(
     N_iters=10000,                 # number of optimization steps
