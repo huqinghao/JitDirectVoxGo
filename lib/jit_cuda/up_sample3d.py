@@ -1,7 +1,6 @@
 from jittor import Function
 import jittor as jt
-import torch
-import torch.nn.functional as F
+
 
 def interpolate(X, size=None, scale_factor=None, mode='trilinear', align_corners=False, tf_mode=False):
     
@@ -191,19 +190,17 @@ __global__ void upsample_trilinear3d_out_frame(
 if __name__ == '__main__':
     import numpy as np 
     jt.flags.use_cuda = 2
-    input = np.random.rand(1,1,89,100,120).astype("float32").clip(0.1,0.8)
+    input = np.random.rand(1,1,89,100,120).astype("float32")
     np.save("npy/interpolate_input.npy",input)
     
     input_jittor = jt.array(input)
     res_jittor = interpolate(input_jittor,jt.array((130,248,355)),mode='trilinear',align_corners=True)
-    
+    import torch
+    import torch.nn.functional as F
     res_torch = F.interpolate(torch.from_numpy(input),(130,248,355),mode='trilinear',align_corners=True)
         
     diff = res_torch.numpy() - res_jittor.data
     print(diff)
     
-    
     print(diff.shape)
-    
-    
-    
+
