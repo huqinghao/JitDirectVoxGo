@@ -1,5 +1,5 @@
 from jittor import Function
-
+from grid_sampler_backward import grid_sampler_3d_backward_cuda
 def grid_sample(
     input,
     grid,
@@ -49,22 +49,14 @@ from jittor import Function
 class GridSampler(Function):
 
     def execute(self, input, grid, mode_enum, padding_mode_enum, align_corners):
-        '''
-        alpha = 1 - exp(-softplus(density + shift) * interval)
-              = 1 - exp(-log(1 + exp(density + shift)) * interval)
-              = 1 - exp(log(1 + exp(density + shift)) ^ (-interval))
-              = 1 - (1 + exp(density + shift)) ^ (-interval)
-        '''
+
+        self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners=\
+            input,grid,mode_enum,padding_mode_enum,align_corners
         # exp, alpha = render_utils.raw2alpha(density, shift, interval)
         
-        return sampled_grid
+        return None
 
-    def grad(self, grad_back):
-        '''
-        alpha' = interval * ((1 + exp(density + shift)) ^ (-interval-1)) * exp(density + shift)'
-               = interval * ((1 + exp(density + shift)) ^ (-interval-1)) * exp(density + shift)
-        '''
-
+    def grad(self, grad_output):
         #return render_utils_cuda.raw2alpha_backward(exp, grad_back.contiguous(), interval), None, None
-
-        return None, grid_grads,None,None,None,
+        grad_input, grad_grid=grid_sampler_3d_backward_cuda(grad_output, self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners)
+        return grad_input, grad_grid,None,None,None,
