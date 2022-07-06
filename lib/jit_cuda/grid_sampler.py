@@ -33,14 +33,17 @@ def grid_sample(
     else:  # padding_mode == 'reflection'
         padding_mode_enum = 2
 
-    if align_corners is None:
+    if align_corners:
+        align_corners=1
+    else:
         print(
             "Default grid_sample and affine_grid behavior has changed "
             "to align_corners=False since 1.3.0. Please specify "
             "align_corners=True if the old behavior is desired. "
             "See the documentation of grid_sample for details."
         )
-        align_corners = False
+        align_corners = 0
+    
 
     return GridSampler()(input, grid, mode_enum, padding_mode_enum, align_corners)
 
