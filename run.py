@@ -242,9 +242,9 @@ def compute_bbox_by_coarse_geo(model_class, model_path, thres):
     eps_time = time.time()
     model = utils.load_model(model_class, model_path)
     interp = jt.stack(jt.meshgrid(
-        jt.linspace(0, 1, model.world_size[0]),
-        jt.linspace(0, 1, model.world_size[1]),
-        jt.linspace(0, 1, model.world_size[2]),
+        jt.linspace(0, 1, model.world_size[0].item()),
+        jt.linspace(0, 1, model.world_size[1].item()),
+        jt.linspace(0, 1, model.world_size[2].item()),
     ), -1)
     dense_xyz = model.xyz_min * (1-interp) + model.xyz_max * interp
     density = model.density(dense_xyz)
@@ -403,7 +403,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                         stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
                         irregular_shape=data_dict['irregular_shape'])
             else:
-                cnt=jt.float32(np.load(f"count.npy"))
+                cnt=jt.float32(np.load(f"npy/Easyship_count_2_6.npy"))
                 # cnt=jt.float32(np.load(f"count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
@@ -455,9 +455,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             # sel_r = jt.Var(np.load("sel_r.npy"))
             # sel_c = jt.Var(np.load("sel_c.npy"))
             
-            sel_b = jt.randint(0, rgb_tr.shape[0], [cfg_train.N_rand])
-            sel_r = jt.randint(0, rgb_tr.shape[1], [cfg_train.N_rand])
-            sel_c = jt.randint(0, rgb_tr.shape[2], [cfg_train.N_rand])
+            sel_b = np.random.randint(0,rgb_tr.shape[0],cfg_train.N_rand)
+            sel_r = np.random.randint(0,rgb_tr.shape[1],cfg_train.N_rand)
+            sel_c = np.random.randint(0,rgb_tr.shape[2],cfg_train.N_rand)
             target = rgb_tr[sel_b, sel_r, sel_c]
             rays_o = rays_o_tr[sel_b, sel_r, sel_c]
             rays_d = rays_d_tr[sel_b, sel_r, sel_c]

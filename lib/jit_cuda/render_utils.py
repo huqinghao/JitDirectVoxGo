@@ -660,7 +660,7 @@ __global__ void raw2alpha_nonuni_cuda_kernel(
     cudaMemsetAsync(out1_p, 0, out1->size);
 
     if(n_pts != 0) {{
-        const int threads = 256;
+        const int threads = 512;
         const int blocks = (n_pts + threads - 1) / threads;
         raw2alpha_nonuni_cuda_kernel<float32><<<blocks, threads>>>(
             density_p,
@@ -716,7 +716,7 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     cudaMemsetAsync(out0_p, 0, out0->size);
 
     if(n_pts != 0) {{
-        const int threads = 256;
+        const int threads = 512;
         const int blocks = (n_pts + threads - 1) / threads;
         raw2alpha_nonuni_backward_cuda_kernel<float32><<<blocks, threads>>>(
           exp_d_p,
