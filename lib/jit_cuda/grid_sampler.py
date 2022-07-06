@@ -1,7 +1,7 @@
 from jittor import Function
 import jittor as jt
-from grid_sampler_backward import grid_sampler_3d_backward_cuda
-from grid_sampler_cuda import grid_sampler_3d_forward_cuda
+from .grid_sampler_backward import grid_sampler_3d_backward_cuda
+from .grid_sampler_cuda import grid_sampler_3d_forward_cuda
 def grid_sample(
     input,
     grid,
@@ -35,18 +35,17 @@ def grid_sample(
     else:  # padding_mode == 'reflection'
         padding_mode_enum = 2
 
-    if align_corners:
-        align_corners=1
-    else:
+    if align_corners is None:
         print(
             "Default grid_sample and affine_grid behavior has changed "
             "to align_corners=False since 1.3.0. Please specify "
             "align_corners=True if the old behavior is desired. "
             "See the documentation of grid_sample for details."
         )
-        align_corners = 0
+        align_corners = False
+        
+    align_corners = 1 if align_corners else 0
     
-
     return GridSampler()(input, grid, mode_enum, padding_mode_enum, align_corners)
 
 from jittor import Function
@@ -60,10 +59,11 @@ class GridSampler(Function):
         
 
         output = grid_sampler_3d_forward_cuda(input, grid,mode_enum, padding_mode_enum, align_corners)
-
+        return output
+        
     def grad(self, grad_output):
 
-        grad_input, grad_grid = grid_sampler_3d_backward_cuda(grad_output, self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners)
+        grad_input, grad_grid = grid_sampler_3d_backward_cuda(grad_output,self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners)
         
         return grad_input, grad_grid, None, None, None
     
