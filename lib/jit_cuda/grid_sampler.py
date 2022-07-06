@@ -57,6 +57,8 @@ class GridSampler(Function):
         assert len(input.shape) == 5 , "only support grid sampler 3-D, which need 5d input "
         assert len(grid.shape) == 5, "only support grid sampler 3-D, which need 5d grid"
         
+        self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners=\
+            input,grid,mode_enum,padding_mode_enum,align_corners
 
         output = grid_sampler_3d_forward_cuda(input, grid,mode_enum, padding_mode_enum, align_corners)
         return output
