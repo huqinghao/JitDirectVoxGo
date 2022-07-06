@@ -1,5 +1,7 @@
 from jittor import Function
+import jittor as jt
 from grid_sampler_backward import grid_sampler_3d_backward_cuda
+from grid_sampler_cuda import grid_sampler_3d_forward_cuda
 def grid_sample(
     input,
     grid,
@@ -40,8 +42,8 @@ def grid_sample(
             "align_corners=True if the old behavior is desired. "
             "See the documentation of grid_sample for details."
         )
-        align_corners = False
-
+        align_corners = False   
+    
     return GridSampler()(input, grid, mode_enum, padding_mode_enum, align_corners)
 
 from jittor import Function
@@ -50,13 +52,47 @@ class GridSampler(Function):
 
     def execute(self, input, grid, mode_enum, padding_mode_enum, align_corners):
 
-        self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners=\
-            input,grid,mode_enum,padding_mode_enum,align_corners
-        # exp, alpha = render_utils.raw2alpha(density, shift, interval)
+        assert len(input.shape) == 5 , "only support grid sampler 3-D, which need 5d input "
+        assert len(grid.shape) == 5, "only support grid sampler 3-D, which need 5d grid"
         
-        return None
 
-    def grad(self, grad_output):
-        #return render_utils_cuda.raw2alpha_backward(exp, grad_back.contiguous(), interval), None, None
-        grad_input, grad_grid=grid_sampler_3d_backward_cuda(grad_output, self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners)
-        return grad_input, grad_grid,None,None,None,
+        output = grid_sampler_3d_forward_cuda(input, grid,mode_enum, padding_mode_enum, align_corners)
+
+        return output
+    
+    
+if __name__ == '__main__':
+    import numpy as np
+    import torch
+    jt.flags.use_cuda = 2 
+    # jt.flags.use_device = 7
+    grid = np.random.randn(1,3,99,101,101)
+    xyz = np.random.randn(629236,3)
+    xyz_min = np.min(xyz,axis=0)
+    xyz_max = np.max(xyz,axis=0)
+    nor_xyz = np.flip(((xyz - xyz_min) / (xyz_max - xyz_min)),-1) * 2 - 1
+    nor_xyz = nor_xyz.reshape(1,1,1,-1,3)
+    
+    jt_grid = jt.array(grid)
+    jt_nor_xyz = jt.array(nor_xyz)
+        
+    jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
+    manu_feature = grid_sample(jt_grid,jt_nor_xyz, mode='bilinear', align_corners=True) 
+    jt.sync_all()
+    
+    cpu_gpu_diff = manu_feature - jt_feature
+    
+    torch_grid = torch.from_numpy(grid)
+    torch_nor_xyz = torch.from_numpy(nor_xyz)
+    
+    torch_self_diff = torch.nn.functional.grid_sample(torch_grid,torch_nor_xyz,mode='bilinear',align_corners=True).numpy() - manu_feature.data
+
+
+    import time 
+    start_time = time.time()
+    total_count = 2000
+    for i in range(total_count):
+      manu_feature = grid_sample(jt_grid,jt_nor_xyz, mode='bilinear', align_corners=True) 
+      jt.sync_all()
+    total_time = time.time() - start_time
+    print("AVG time : ", total_time/total_count)

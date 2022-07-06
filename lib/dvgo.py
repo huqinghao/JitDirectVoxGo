@@ -143,7 +143,7 @@ class DirectVoxGO(jt.nn.Module):
         else:
             #TODO: list(Var)==>list not supported
             #mask = jt.ones(list(mask_cache_world_size), dtype=jt.bool)
-            mask = jt.ones(mask_cache_world_size, dtype=jt.bool)
+            mask = jt.ones([ind.item() for ind in mask_cache_world_size], dtype=jt.bool)
         self.mask_cache = grid.MaskGrid(
                 path=None, mask=mask,
                 xyz_min=self.xyz_min, xyz_max=self.xyz_max)
