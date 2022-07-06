@@ -243,9 +243,7 @@ class DirectVoxGO(jt.nn.Module):
         count = jt.zeros_like(self.density.get_dense_grid()).stop_grad()
         #TODO:
         # device = rng.device
-        heart_msg=0
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
-            heart_msg+=1
             ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
             optimizer=jt.optim.SGD([ones.grid],0)
             if irregular_shape:
@@ -258,7 +256,6 @@ class DirectVoxGO(jt.nn.Module):
                 rays_d_ = rays_d_[::downrate, ::downrate].flatten(0,-2).split(10000)
 
             for rays_o, rays_d in zip(rays_o_, rays_d_):
-                # print(len(rays_o_), "???")
                 vec = jt.where(rays_d==0, jt.full_like(rays_d, 1e-6), rays_d)
                 rate_a = (self.xyz_max - rays_o) / vec
                 rate_b = (self.xyz_min - rays_o) / vec
@@ -274,13 +271,6 @@ class DirectVoxGO(jt.nn.Module):
                 jt.sync_all()
             with jt.no_grad():
                 count = (count + ones.grid.opt_grad(optimizer)> 1).detach()
-            # exit(0)
-            # del ones
-            # del optimizer
-            # jt.gc()
-            # count.sync(True)
-            # # jt.clean_graph()
-            # jt.gc()
             
         eps_time = time.time() - eps_time
         print('dvgo: voxel_count_views finish (eps time:', eps_time, 'sec)')
