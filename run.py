@@ -438,8 +438,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 raise NotImplementedError
             optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
             model.act_shift -= cfg_train.decay_after_scale
-            #TODO: 
-            # jt.cuda.empty_cache()
+            jt.clean_graph()
+            jt.sync_all()
+            jt.gc()
         # random sample rays
         if cfg_train.ray_sampler in ['flatten', 'in_maskcache']:
             sel_i = batch_index_sampler()
@@ -448,13 +449,6 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rays_d = rays_d_tr[sel_i]
             viewdirs = viewdirs_tr[sel_i]
         elif cfg_train.ray_sampler == 'random':
-           
-            #TODO: for debug
-            # import torch
-            # sel_b = jt.Var(np.load("sel_b.npy"))
-            # sel_r = jt.Var(np.load("sel_r.npy"))
-            # sel_c = jt.Var(np.load("sel_c.npy"))
-            
             sel_b = np.random.randint(0,rgb_tr.shape[0],cfg_train.N_rand)
             sel_r = np.random.randint(0,rgb_tr.shape[1],cfg_train.N_rand)
             sel_c = np.random.randint(0,rgb_tr.shape[2],cfg_train.N_rand)
@@ -581,6 +575,10 @@ def train(args, cfg, data_dict):
     else:
         print('train: skip coarse geometry searching')
         coarse_ckpt_path = None
+
+    jt.clean_graph()
+    jt.sync_all()
+    jt.gc()
 
     # fine detail reconstruction
     eps_fine = time.time()
