@@ -562,8 +562,15 @@ if __name__ == '__main__':
     jt.flags.use_cuda = 2
 
     #grid = np.random.rand(1,1,89,100,120).astype("float32").clip(0.1,0.8)
-    grid=np.load("grid.npy")
-    ind_norm=np.load("ind_norm.npy")
+    grid = np.random.randn(1,3,99,101,101)
+    xyz = np.random.randn(629236,3)
+    xyz_min = np.min(xyz,axis=0)
+    xyz_max = np.max(xyz,axis=0)
+    nor_xyz = np.flip(((xyz - xyz_min) / (xyz_max - xyz_min)),-1) * 2 - 1
+    ind_norm = nor_xyz.reshape(1,1,1,-1,3)
+
+    # grid=np.load("grid.npy")
+    # ind_norm=np.load("ind_norm.npy")
 
     ind_norm_jittor = jt.array(ind_norm)
     grid_jittor  = jt.array(grid)
@@ -574,9 +581,9 @@ if __name__ == '__main__':
     import torch
     import  torch.nn.functional as F
     import random
-    torch.manual_seed(777)
-    np.random.seed(777)
-    random.seed(777)
+    # torch.manual_seed(777)
+    # np.random.seed(777)
+    # random.seed(777)
     # torch.backends.cudnn.enabled = False
     grid_torch   = torch.from_numpy(grid).cuda(device='cuda:0').requires_grad_(True)
     ind_norm_torch  = torch.from_numpy(ind_norm).cuda(device='cuda:0').requires_grad_(True)
@@ -590,18 +597,24 @@ if __name__ == '__main__':
 
     grad_grid=grid_torch.grad.cpu().numpy()
     output_jittor= jt.array(out.detach().cpu().numpy())
-     
-    grad_input,grad_grid=grid_sampler_3d_backward_cuda(jt.array(out_grad.cpu().numpy()),grid_jittor,ind_norm_jittor,0,0,1)
-    
+    jt_input=jt.array(out_grad.cpu().numpy())
+    import time
+    start=time.time()
+    for i in range(1000):
+        grad_input,grad_grid=grid_sampler_3d_backward_cuda(jt_input,grid_jittor,ind_norm_jittor,0,0,1)
+        jt.sync_all()
+    print("time:",(time.time()-start)/1000.0)
     diff=grad_input.data-grid_torch.grad.cpu().numpy()
     diff2=grad_grid.data-ind_norm_torch.grad.cpu().numpy()
-    print(np.sum(grad_input.data!=0))
-    print(np.sum(grad_grid.data!=0))
-    print(np.sum(grid_torch.grad.cpu().numpy()!=0))
-    print(np.sum(ind_norm_torch.grad.cpu().numpy()!=0))
+    # print(np.sum(grad_input.data!=0))
+    # print(np.sum(grad_grid.data!=0))
+    # print(np.sum(grid_torch.grad.cpu().numpy()!=0))
+    # print(np.sum(ind_norm_torch.grad.cpu().numpy()!=0))
     
-    print(np.sum(np.abs(diff)>1e-6))
-    print(np.sum(np.abs(diff2)>1e-3))
-    index=np.abs(diff)>1e-3
-    print(grad_input.data[index].flatten()[0:100])
-    print(grid_torch.grad.cpu().numpy()[index].flatten()[0:100])
+    print(np.sum(np.abs(diff)>1e-5))
+    print(np.sum(np.abs(diff2)>1e-5))
+    index=np.abs(diff)>1e-4
+    print(np.max(np.abs(diff)))
+
+    # print(grad_input.data[index].flatten()[0:100])
+    # print(grid_torch.grad.cpu().numpy()[index].flatten()[0:100])
