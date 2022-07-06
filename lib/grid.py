@@ -10,7 +10,7 @@ from jittor import init
 import jittor as jt
 import jittor.nn as nn
 # import jt.nn.functional as F
-from .jit_cuda import render_utils,total_variation,up_sample3d
+from .jit_cuda import render_utils,total_variation,up_sample3d,grid_sampler
 # from jt.utils.cpp_extension import load
 #TODO
 # parent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +62,7 @@ class DenseGrid(nn.Module):
         ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
         # TODO
         # nn.grid_sample too slow 
-        out = nn.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+        out = grid_sampler.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
         # out = jt.randn((*shape,self.channels))
         # out= jt.Var(np.load("dense_grid.npy"))
         out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)

@@ -190,17 +190,66 @@ __global__ void upsample_trilinear3d_out_frame(
 if __name__ == '__main__':
     import numpy as np 
     jt.flags.use_cuda = 2
-    input = np.random.rand(1,1,89,100,120).astype("float32")
-    np.save("npy/interpolate_input.npy",input)
-    
-    input_jittor = jt.array(input)
-    res_jittor = interpolate(input_jittor,jt.array((130,248,355)),mode='trilinear',align_corners=True)
     import torch
     import torch.nn.functional as F
-    res_torch = F.interpolate(torch.from_numpy(input),(130,248,355),mode='trilinear',align_corners=True)
-        
-    diff = res_torch.numpy() - res_jittor.data
-    print(diff)
+    # input = np.random.rand(1,1,89,100,120).astype("float32")
+    # np.save("npy/interpolate_input.npy",input)
+
+    # input_jittor = jt.array(input)
+    # res_jittor = interpolate(input_jittor,jt.array((130,248,355)),mode='trilinear',align_corners=True)
     
-    print(diff.shape)
+    # res_torch = F.interpolate(torch.from_numpy(input),(130,248,355),mode='trilinear',align_corners=True)
+    
+    # diff = res_torch.numpy() - res_jittor.data
+    # # print(diff)
+    
+    # # print(diff.shape)
+    
+    grid = np.random.randn(1,3,99,101,101)
+    xyz = np.random.randn(629236,3)
+    xyz_min = np.min(xyz,axis=0)
+    xyz_max = np.max(xyz,axis=0)
+    nor_xyz = np.flip(((xyz - xyz_min) / (xyz_max - xyz_min)),-1) * 2 - 1
+    nor_xyz = nor_xyz.reshape(1,1,1,-1,3)
+    
+    jt_grid = jt.array(grid)
+    jt_nor_xyz = jt.array(nor_xyz)
+    import time
+    star_time = time.time()
+    time_count = 500
+    for i in range(time_count):
+      once_time = time.time()
+      jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
+      # jt.sync_all()
+      # print(time.time() - once_time)
+      # jt.gc()
+      # jt.clean_graph()
+    
+    jt.sync_all()
+    print("time : ", (time.time() -star_time )/ time_count)
+    
+    jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
+    jt.sync_all()
+    jt_feature = jt.stack([jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) for i in range(time_count)], 0)
+
+
+    jt.sync_all()
+    all_time = time.time() - star_time
+    print("jittor cuda per time: ", all_time / time_count)
+    
+    torch_grid = torch.from_numpy(grid)
+    torch_nor_xyz = torch.from_numpy(nor_xyz)
+    star_time = time.time()
+    torch_feature = torch.stack([F.grid_sample(torch_grid,torch_nor_xyz,mode='bilinear',align_corners=True) for i in range(time_count)], dim=0)
+    # for i in range(time_count):
+    #   torch_feature = F.grid_sample(torch_grid,torch_nor_xyz,mode='bilinear',align_corners=True)
+    all_time = time.time() - star_time
+    print("torch cpu per time: ", all_time / time_count)
+    diff = torch_feature.numpy() - jt_feature.data
+    
+    print(diff.max(), diff.min())
+    
+    print(np.sum(np.abs(diff)))
+    
+    # print(123)
 

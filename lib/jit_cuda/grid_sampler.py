@@ -61,8 +61,11 @@ class GridSampler(Function):
 
         output = grid_sampler_3d_forward_cuda(input, grid,mode_enum, padding_mode_enum, align_corners)
 
-        return output
-    
+    def grad(self, grad_output):
+
+        grad_input, grad_grid = grid_sampler_3d_backward_cuda(grad_output, self.input,self.grid,self.mode_enum,self.padding_mode_enum,self.align_corners)
+        
+        return grad_input, grad_grid, None, None, None
     
 if __name__ == '__main__':
     import numpy as np
