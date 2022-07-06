@@ -78,6 +78,8 @@ class DenseGrid(nn.Module):
             #     mode='trilinear', align_corners=True)
             self.grid = up_sample3d.interpolate(self.grid, size=tuple(new_world_size), \
                 mode='trilinear', align_corners=True)
+            #TODO: tmp fix
+            self.grid.requires_grad=True
 
     def total_variation_add_grad(self, wx, wy, wz, dense_mode):
         '''Add gradients by total variation loss in-place'''

@@ -28,9 +28,8 @@ class MaskedAdam(jt.optim.Adam):
             raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
         if not 0.0 <= betas[1] < 1.0:
             raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
-        defaults = dict(lr=lr, betas=betas, eps=eps)
         self.per_lr = None
-        super(MaskedAdam, self).__init__(params, defaults)
+        super(MaskedAdam, self).__init__(params, lr=lr, betas=betas, eps=eps)
 
     def __setstate__(self, state):
         super(MaskedAdam, self).__setstate__(state)
@@ -77,4 +76,4 @@ class MaskedAdam(jt.optim.Adam):
                     adam_upd.adam_upd(
                             param, grad, m, v,
                             n, beta1, beta2, lr, eps)
-
+                param.requires_grad=True

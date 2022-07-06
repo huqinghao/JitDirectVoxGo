@@ -881,7 +881,7 @@ def alpha2weight_backward(
 #include <cuda_runtime.h>
 
 #include <vector>
-
+using jittor::int64;
 namespace{
 
 template <typename scalar_t>
@@ -908,6 +908,7 @@ __global__ void alpha2weight_backward_cuda_kernel(
       back_cum += grad_weights[i] * weight[i];
     }
   }
+}
 }
     
     

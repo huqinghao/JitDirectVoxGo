@@ -403,7 +403,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                         stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
                         irregular_shape=data_dict['irregular_shape'])
             else:
-                cnt=jt.float32(np.load(f"npy/Easyship_count.npy"))
+                cnt=jt.float32(np.load(f"count.npy"))
                 # cnt=jt.float32(np.load(f"count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
@@ -471,7 +471,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         #     rays_d = rays_d.to(device)
         #     viewdirs = viewdirs.to(device)
         # print('get_training_rays_flatten: finish (eps time:', eps_time, 'sec)')
-        
+        # print(model.density.grid.is_stop_grad())
         # volume rendering
         render_result = model(
             rays_o, rays_d, viewdirs,
@@ -506,7 +506,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
             loss += cfg_train.weight_rgbper * rgbper_loss
         optimizer.backward(loss)
-
+        # print(model.density.grid.is_stop_grad())
         if global_step<cfg_train.tv_before and global_step>cfg_train.tv_after and global_step%cfg_train.tv_every==0:
             if cfg_train.weight_tv_density>0:
                 model.density_total_variation_add_grad(
@@ -514,10 +514,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             if cfg_train.weight_tv_k0>0:
                 model.k0_total_variation_add_grad(
                     cfg_train.weight_tv_k0/len(rays_o), global_step<cfg_train.tv_dense_before)
-
+        # print(model.density.grid.is_stop_grad())
         optimizer.step()
         psnr_lst.append(psnr.item())
-
+        # print(psnr_lst[-1])
         # update lr
         decay_steps = cfg_train.lrate_decay * 1000
         decay_factor = 0.1 ** (1/decay_steps)

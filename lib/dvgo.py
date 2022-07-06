@@ -142,8 +142,9 @@ class DirectVoxGO(jt.nn.Module):
             mask = mask_cache(self_grid_xyz)
         else:
             #TODO: list(Var)==>list not supported
-            #mask = jt.ones(list(mask_cache_world_size), dtype=jt.bool)
-            mask = jt.ones(mask_cache_world_size, dtype=jt.bool)
+            # mask = jt.ones(list(mask_cache_world_size), dtype=jt.bool)
+            mask = jt.ones([ind.item() for ind in mask_cache_world_size], dtype=jt.bool)
+            # mask = jt.ones(mask_cache_world_size, dtype=jt.bool)
         self.mask_cache = grid.MaskGrid(
                 path=None, mask=mask,
                 xyz_min=self.xyz_min, xyz_max=self.xyz_max)
@@ -194,6 +195,7 @@ class DirectVoxGO(jt.nn.Module):
             for co in np.split(cam_o,100)  # for memory saving
         ]).min(0)
         self.density.grid[nearest_dist[None,None] <= near_clip] = -100
+        self.density.grid.requires_grad=True
         del nearest_dist
     @jt.no_grad()
     def scale_volume_grid(self, num_voxels):

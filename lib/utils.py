@@ -97,7 +97,7 @@ def create_optimizer_or_freeze_model(model, cfg_train, global_step):
         else:
             print(f'create_optimizer_or_freeze_model: param {k} freeze')
             param.requires_grad = False
-    return MaskedAdam(param_group)
+    return MaskedAdam(param_group,lr=lr)
 
 
 ''' Checkpoint utils
