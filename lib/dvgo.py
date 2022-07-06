@@ -109,9 +109,9 @@ class DirectVoxGO(jt.nn.Module):
             else:
                 dim0 += self.k0_dim-3
             self.rgbnet = nn.Sequential(
-                nn.Linear(dim0, rgbnet_width), nn.ReLU(inplace=True),
+                nn.Linear(dim0, rgbnet_width), nn.ReLU(),
                 *[
-                    nn.Sequential(nn.Linear(rgbnet_width, rgbnet_width), nn.ReLU(inplace=True))
+                    nn.Sequential(nn.Linear(rgbnet_width, rgbnet_width), nn.ReLU())
                     for _ in range(rgbnet_depth-2)
                 ],
                 nn.Linear(rgbnet_width, 3),
@@ -127,6 +127,8 @@ class DirectVoxGO(jt.nn.Module):
         self.mask_cache_thres = mask_cache_thres
         if mask_cache_world_size is None:
             mask_cache_world_size = self.world_size
+        else:
+            mask_cache_world_size = jt.array(mask_cache_world_size,dtype='int32')
         if mask_cache_path is not None and mask_cache_path:
             # mask_cache = grid.MaskGrid(
             #         path=mask_cache_path,
@@ -135,9 +137,9 @@ class DirectVoxGO(jt.nn.Module):
                     path=mask_cache_path,
                     mask_cache_thres=mask_cache_thres)
             self_grid_xyz = jt.stack(jt.meshgrid(
-                jt.linspace(self.xyz_min[0], self.xyz_max[0], mask_cache_world_size[0]),
-                jt.linspace(self.xyz_min[1], self.xyz_max[1], mask_cache_world_size[1]),
-                jt.linspace(self.xyz_min[2], self.xyz_max[2], mask_cache_world_size[2]),
+                jt.linspace(self.xyz_min[0], self.xyz_max[0], mask_cache_world_size[0].item()),
+                jt.linspace(self.xyz_min[1], self.xyz_max[1], mask_cache_world_size[1].item()),
+                jt.linspace(self.xyz_min[2], self.xyz_max[2], mask_cache_world_size[2].item()),
             ), -1)
             mask = mask_cache(self_grid_xyz)
         else:
@@ -700,7 +702,7 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
     print('get_training_rays_in_maskcache_sampling: start')
     assert len(rgb_tr_ori) == len(train_poses) and len(rgb_tr_ori) == len(Ks) and len(rgb_tr_ori) == len(HW)
     CHUNK = 64
-    DEVICE = rgb_tr_ori[0].device
+    # DEVICE = rgb_tr_ori[0].device
     # DEVICE = rgb_tr_ori[0].device
     eps_time = time.time()
     N = sum(((im.shape[0] * im.shape[1]) for im in rgb_tr_ori))
@@ -724,14 +726,14 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
             mask[i:i+CHUNK] = model.hit_coarse_geo(
                     rays_o=rays_o[i:i+CHUNK], rays_d=rays_d[i:i+CHUNK], **render_kwargs)
     
-        n = mask.sum()
-        rgb_tr[top:top+n].copy_(img[mask])
+        n = mask.sum().item()
+        rgb_tr[top:top+n]=img[mask].copy()
         # rays_o_tr[top:(top + n)].copy_(rays_o[mask].to(DEVICE))
         # rays_d_tr[top:(top + n)].copy_(rays_d[mask].to(DEVICE))
         # viewdirs_tr[top:(top + n)].copy_(viewdirs[mask].to(DEVICE))
-        rays_o_tr[top:(top + n)].copy_(rays_o[mask])
-        rays_d_tr[top:(top + n)].copy_(rays_d[mask])
-        viewdirs_tr[top:(top + n)].copy_(viewdirs[mask])
+        rays_o_tr[top:(top + n)]=rays_o[mask].copy()
+        rays_d_tr[top:(top + n)]=rays_d[mask].copy()
+        viewdirs_tr[top:(top + n)]=viewdirs[mask].copy()
         imsz.append(n)
         top += n
 

@@ -240,7 +240,7 @@ class MaskGrid(nn.Module):
         if path is not None:
             st = jt.load(path)
             self.mask_cache_thres = mask_cache_thres
-            density = nn.max_pool3d(st['model_state_dict']['density.grid'], kernel_size=3, padding=1, stride=1)
+            density = nn.max_pool3d(jt.array(st['model_state_dict']['density.grid']), kernel_size=3, stride=1, padding=1)
             alpha = 1 - jt.exp(-nn.softplus(density + st['model_state_dict']['act_shift']) * st['model_kwargs']['voxel_size_ratio'])
             mask = (alpha >= self.mask_cache_thres).squeeze(0).squeeze(0)
             mask = mask.bool()
