@@ -419,6 +419,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         # renew occupancy grid
         if model.mask_cache is not None and (global_step + 500) % 1000 == 0:
             model.update_occupancy_cache()
+            # jt.clean_graph()
+            # jt.sync_all()
+            # jt.gc()
 
         # progress scaling checkpoint
         if global_step in cfg_train.pg_scale:
@@ -522,9 +525,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                        f'Eps: {eps_time_str}')
             psnr_lst = []
             
-            jt.clean_graph()
-            jt.sync_all
-            jt.gc()
+            # jt.clean_graph()
+            # jt.sync_all
+            # jt.gc()
 
         if global_step%args.i_weights==0:
             path = os.path.join(cfg.basedir, cfg.expname, f'{stage}_{global_step:06d}.tar')
@@ -613,7 +616,7 @@ if __name__=='__main__':
     args = parser.parse_args()
     cfg = mmcv.Config.fromfile(args.config)
 
-    jt.flags.use_cuda = 2
+    jt.flags.use_cuda = 1
     # init enviroment
     # if jt.cuda.is_available():
     #     jt.set_default_tensor_type('jt.cuda.FloatTensor')
