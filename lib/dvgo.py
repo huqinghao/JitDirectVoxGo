@@ -685,16 +685,20 @@ def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, f
                 H=H, W=W, K=K, c2w=c2w, ndc=ndc,
                 inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
         n = H * W
-        rgb_tr[top:top+n].copy_(img.flatten(0,1))
+        rgb_tr[top:top+n] = img.flatten(0,1)
         # rays_o_tr[top:(top + n)].copy_(rays_o.flatten(start_dim=0, end_dim=1).to(DEVICE))
         # rays_d_tr[top:(top + n)].copy_(rays_d.flatten(start_dim=0, end_dim=1).to(DEVICE))
         # viewdirs_tr[top:(top + n)].copy_(viewdirs.flatten(start_dim=0, end_dim=1).to(DEVICE))
         #TODO:
-        rays_o_tr[top:(top + n)].copy_(rays_o.flatten(0, 1))
-        rays_d_tr[top:(top + n)].copy_(rays_d.flatten(0, 1))
-        viewdirs_tr[top:(top + n)].copy_(viewdirs.flatten(0,1))
+        rays_o_tr[top:(top + n)] = rays_o.flatten(0, 1)
+        rays_d_tr[top:(top + n)] = rays_d.flatten(0, 1)
+        viewdirs_tr[top:(top + n)] = viewdirs.flatten(0,1)
         imsz.append(n)
         top += n
+        
+        jt.clean_graph()
+        jt.sync_all()
+        jt.gc()
 
     assert top == N
     eps_time = time.time() - eps_time
@@ -732,15 +736,19 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
                     rays_o=rays_o[i:i+CHUNK], rays_d=rays_d[i:i+CHUNK], **render_kwargs)
     
         n = mask.sum().item()
-        rgb_tr[top:top+n]=img[mask].copy()
+        rgb_tr[top:top+n]=img[mask]
         # rays_o_tr[top:(top + n)].copy_(rays_o[mask].to(DEVICE))
         # rays_d_tr[top:(top + n)].copy_(rays_d[mask].to(DEVICE))
         # viewdirs_tr[top:(top + n)].copy_(viewdirs[mask].to(DEVICE))
-        rays_o_tr[top:(top + n)]=rays_o[mask].copy()
-        rays_d_tr[top:(top + n)]=rays_d[mask].copy()
-        viewdirs_tr[top:(top + n)]=viewdirs[mask].copy()
+        rays_o_tr[top:(top + n)]=rays_o[mask]
+        rays_d_tr[top:(top + n)]=rays_d[mask]
+        viewdirs_tr[top:(top + n)]=viewdirs[mask]
         imsz.append(n)
         top += n
+        
+        jt.clean_graph()
+        jt.sync_all()
+        jt.gc()
 
     print('get_training_rays_in_maskcache_sampling: ratio', top / N)
     rgb_tr = rgb_tr[:top]

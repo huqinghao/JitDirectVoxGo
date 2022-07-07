@@ -397,14 +397,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
         def per_voxel_init():
-            if True:
-                cnt = model.voxel_count_views(
-                        rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
-                        stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
-                        irregular_shape=data_dict['irregular_shape'])
-            else:
-                # cnt=jt.float32(np.load(f"npy/Easyship_count_2_6.npy"))
-                cnt=jt.float32(np.load(f"count.npy"))
+            cnt = model.voxel_count_views(
+                    rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
+                    stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
+                    irregular_shape=data_dict['irregular_shape'])
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
             model.mask_cache.mask = model.mask_cache.mask.bool()
