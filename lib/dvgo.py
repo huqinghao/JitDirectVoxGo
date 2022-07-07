@@ -623,22 +623,23 @@ def get_rays_of_a_view(H, W, K, c2w, ndc, inverse_y, flip_x, flip_y, mode='cente
 @jt.no_grad()
 def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
     print('get_training_rays: start')
+    rgb_tr_length = rgb_tr.shape[0]
     assert len(np.unique(HW, axis=0)) == 1
     assert len(np.unique(Ks.reshape(len(Ks),-1), axis=0)) == 1
-    assert len(rgb_tr) == len(train_poses) and len(rgb_tr) == len(Ks) and len(rgb_tr) == len(HW)
+    assert rgb_tr_length == len(train_poses) and rgb_tr_length == len(Ks) and rgb_tr_length == len(HW)
     H, W = HW[0]
     H=int(H)
     W=int(W)
     K = Ks[0]
     eps_time = time.time()
     #TODO: int64 not supported
-    rays_o_tr = jt.zeros([len(rgb_tr), H, W, 3])
-    rays_d_tr = jt.zeros([len(rgb_tr),H,  W, 3])
-    viewdirs_tr = jt.zeros([len(rgb_tr), H,  W, 3])
-    # rays_o_tr = jt.zeros([len(rgb_tr), H, W, 3], device=rgb_tr.device)
-    # rays_d_tr = jt.zeros([len(rgb_tr), H, W, 3], device=rgb_tr.device)
-    # viewdirs_tr = jt.zeros([len(rgb_tr), H, W, 3], device=rgb_tr.device)
-    imsz = [1] * len(rgb_tr)
+    rays_o_tr = jt.zeros([rgb_tr_length, H, W, 3])
+    rays_d_tr = jt.zeros([rgb_tr_length,H,  W, 3])
+    viewdirs_tr = jt.zeros([rgb_tr_length, H,  W, 3])
+    # rays_o_tr = jt.zeros([rgb_tr_length, H, W, 3], device=rgb_tr.device)
+    # rays_d_tr = jt.zeros([rgb_tr_length, H, W, 3], device=rgb_tr.device)
+    # viewdirs_tr = jt.zeros([rgb_tr_length, H, W, 3], device=rgb_tr.device)
+    imsz = [1] * rgb_tr_length
     for i, c2w in enumerate(train_poses):
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w, ndc=ndc, inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
@@ -723,7 +724,7 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
     imsz = []
     top = 0
     for c2w, img, (H, W), K in zip(train_poses, rgb_tr_ori, HW, Ks):
-        assert img.shape[:2] == (H, W)
+        assert img.shape[0] == H and img.shape[1] == W
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w, ndc=ndc,
                 inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)

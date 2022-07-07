@@ -174,7 +174,8 @@ def load_everything(args, cfg):
     # if data_dict['irregular_shape']:
     #     data_dict['images'] = [jt.array(im,dtype="float32").stop_grad() for im in data_dict['images']]
     # else:
-    #     data_dict['images'] = jt.array(data_dict['images'],dtype="float32").stop_grad()
+    data_dict['images'] = jt.float32(data_dict['images']).stop_grad()
+    
     return data_dict
 
 
@@ -384,16 +385,13 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 train_poses=poses[i_train],
                 HW=HW[i_train], Ks=Ks[i_train], ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
-        index_generator = dvgo.batch_indices_generator(len(rgb_tr), cfg_train.N_rand)
+        index_generator = dvgo.batch_indices_generator(rgb_tr.shape[0], cfg_train.N_rand)
         batch_index_sampler = lambda: next(index_generator)
         return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler
 
     rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler = gather_training_rays()
-
-    jt.clean_graph()
-    jt.sync_all()
-    jt.gc()
-    
+    # rgb_tr = jt.float32(rgb_tr).stop_grad()
+   
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
         def per_voxel_init():
@@ -434,12 +432,13 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 raise NotImplementedError
             optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
             model.act_shift -= cfg_train.decay_after_scale
-            jt.clean_graph()
-            jt.sync_all()
-            jt.gc()
+            # jt.clean_graph()
+            # jt.sync_all()
+            # jt.gc()
+            
         # random sample rays
         if cfg_train.ray_sampler in ['flatten', 'in_maskcache']:
-            sel_i = batch_index_sampler()
+            sel_i = batch_index_sampler() # fine model
             target = rgb_tr[sel_i]
             rays_o = rays_o_tr[sel_i]
             rays_d = rays_d_tr[sel_i]
@@ -522,6 +521,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                        f'Loss: {loss.item():.9f} / PSNR: {np.mean(psnr_lst):5.2f} / '
                        f'Eps: {eps_time_str}')
             psnr_lst = []
+            
+            jt.clean_graph()
+            jt.sync_all
+            jt.gc()
 
         if global_step%args.i_weights==0:
             path = os.path.join(cfg.basedir, cfg.expname, f'{stage}_{global_step:06d}.tar')
