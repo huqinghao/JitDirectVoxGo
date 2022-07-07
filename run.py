@@ -397,14 +397,14 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
         def per_voxel_init():
-            if False:
+            if True:
                 cnt = model.voxel_count_views(
                         rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
                         stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
                         irregular_shape=data_dict['irregular_shape'])
             else:
-                cnt=jt.float32(np.load(f"npy/Easyship_count_2_6.npy"))
-                # cnt=jt.float32(np.load(f"count.npy"))
+                # cnt=jt.float32(np.load(f"npy/Easyship_count_2_6.npy"))
+                cnt=jt.float32(np.load(f"count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
             model.mask_cache.mask = model.mask_cache.mask.bool()
@@ -588,6 +588,10 @@ def train(args, cfg, data_dict):
         xyz_min_fine, xyz_max_fine = compute_bbox_by_coarse_geo(
                 model_class=dvgo.DirectVoxGO, model_path=coarse_ckpt_path,
                 thres=cfg.fine_model_and_render.bbox_thres)
+    jt.clean_graph()
+    jt.sync_all()
+    jt.gc()
+
     scene_rep_reconstruction(
             args=args, cfg=cfg,
             cfg_model=cfg.fine_model_and_render, cfg_train=cfg.fine_train,

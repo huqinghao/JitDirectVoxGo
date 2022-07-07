@@ -238,6 +238,8 @@ class DirectVoxGO(jt.nn.Module):
         print('dvgo: voxel_count_views start')
         far = 1e9  # the given far can be too small while rays stop when hitting scene bbox
         eps_time = time.time()
+
+        # N_samples = int(np.linalg.norm(np.array(self.density.shape[2:])+1) / stepsize) + 1
         N_samples = int(np.linalg.norm(np.array(self.world_size.numpy())+1) / stepsize) + 1
         rng = jt.arange(N_samples)[None].float().stop_grad()
         count = jt.zeros_like(self.density.get_dense_grid()).stop_grad()
@@ -256,7 +258,13 @@ class DirectVoxGO(jt.nn.Module):
                 rays_d_ = rays_d_[::downrate, ::downrate].flatten(0,-2).split(10000)
 
             for rays_o, rays_d in zip(rays_o_, rays_d_):
-                vec = jt.where(rays_d==0, jt.full_like(rays_d, 1e-6), rays_d)
+                # print(len(rays_o_), "???")
+                #TODO: jittor's where is  not same as pytorch's 
+                #
+                # vec = jt.where(rays_d==0, jt.full_like(rays_d, 1e-6), rays_d)
+                idx=jt.where(rays_d==0)
+                vec=rays_d.copy()
+                vec[idx]=1e-6
                 rate_a = (self.xyz_max - rays_o) / vec
                 rate_b = (self.xyz_min - rays_o) / vec
                 # t_min = jt.minimum(rate_a, rate_b).amax(-1).clamp(min=near, max=far)
@@ -270,7 +278,14 @@ class DirectVoxGO(jt.nn.Module):
                 optimizer.backward(ones(rays_pts.detach()).sum())
                 jt.sync_all()
             with jt.no_grad():
-                count = (count + ones.grid.opt_grad(optimizer)> 1).detach()
+                count = count + (ones.grid.opt_grad(optimizer)> 1)
+            # exit(0)
+            # del ones
+            # del optimizer
+            # jt.gc()
+            # count.sync(True)
+            # # jt.clean_graph()
+            # jt.gc()
             
         eps_time = time.time() - eps_time
         print('dvgo: voxel_count_views finish (eps time:', eps_time, 'sec)')
