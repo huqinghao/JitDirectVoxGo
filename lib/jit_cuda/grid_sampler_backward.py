@@ -551,7 +551,7 @@ scalar_t clip_coordinates_set_grad(scalar_t in, int clip_limit, scalar_t *grad_i
     }}
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) 
-        printf("Error in upsample3d: %s\\n", cudaGetErrorString(err));
+        printf("Error in grid sample3d backward: %s\\n", cudaGetErrorString(err));
         
     ''')
     return grad_input,grad_grid
