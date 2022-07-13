@@ -65,7 +65,7 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
                       eval_ssim=False, eval_lpips_alex=False, eval_lpips_vgg=False,prefix=''):
     '''Render images for the given viewpoints; run evaluation if gt given.
     '''
-    assert len(render_poses) == len(HW) and len(HW) == len(Ks)
+    # assert len(render_poses) == len(HW) and len(HW) == len(Ks)
 
     if render_factor!=0:
         HW = np.copy(HW)
@@ -83,8 +83,8 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
 
     for i, c2w in enumerate(tqdm(render_poses)):
 
-        H, W = HW[i]
-        K = Ks[i]
+        H, W = HW[0]
+        K = Ks[0]
         # np to tensor
         c2w = jt.array(c2w)
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
