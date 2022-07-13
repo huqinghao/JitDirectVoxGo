@@ -4,7 +4,7 @@ basedir = './logs/nerf_synthetic'
 
 data = dict(
     datadir='./data/nerf_synthetic/Easyship',
-    npy_datadir='data/nerf_synthetic/easyship/',
+    npy_datadir='./npy_data/nerf_synthetic/easyship/',
     dataset_type='blender',
     white_bkgd=True,
     rand_bkgd=False,

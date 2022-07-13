@@ -4,7 +4,7 @@ basedir = './logs/nerf_synthetic'
 
 data = dict(
     datadir='./data/nerf_synthetic/Car',
-    npy_datadir='data/nerf_synthetic/car/',
+    npy_datadir='./npy_data/nerf_synthetic/car/',
     dataset_type='blender',
     white_bkgd=True,
     half_res=False,
