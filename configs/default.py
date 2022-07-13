@@ -34,6 +34,7 @@ data = dict(
     # Below are unbounded inward-facing specific settings.
     unbounded_inward=False,
     unbounded_inner_r=1.0,
+    npy_datadir=None,
 )
 
 ''' Template of training options

@@ -4,6 +4,7 @@ basedir = './logs/nerf_synthetic'
 
 data = dict(
     datadir='./data/nerf_synthetic/Scarf',
+    npy_datadir='./npy_data/nerf_synthetic/Scarf',
     dataset_type='blender',
     white_bkgd=False,
     half_res=False,

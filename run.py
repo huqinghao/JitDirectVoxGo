@@ -160,8 +160,16 @@ def seed_everything():
 def load_everything(args, cfg):
     '''Load images / poses / camera settings / data split.
     '''
-    data_dict = load_data(cfg.data)
-
+    if os.path.exists(os.path.join(f"""{cfg.data.npy_datadir}""","data_dict.npy")):
+        data_dict = np.load(os.path.join(cfg.data.npy_datadir,"data_dict.npy"),allow_pickle=True).tolist()
+        print(f"loaded input data by npy in {cfg.data.npy_datadir} dir")
+    else:
+        data_dict = load_data(cfg.data)
+        if cfg.data.npy_datadir is not None:
+            os.makedirs(cfg.data.npy_datadir, exist_ok=True)
+            np.save(os.path.join(cfg.data.npy_datadir,"data_dict.npy"), data_dict, allow_pickle=True)
+            print(f"Save loaded data in {cfg.data.npy_datadir} dir as npy file")
+                
     # remove useless field
     kept_keys = {
             'hwf', 'HW', 'Ks', 'near', 'far', 'near_clip',
@@ -176,8 +184,8 @@ def load_everything(args, cfg):
     # if data_dict['irregular_shape']:
     #     data_dict['images'] = [jt.array(im,dtype="float32").stop_grad() for im in data_dict['images']]
     # else:
-    data_dict['images'] = jt.float32(data_dict['images']).stop_grad()
-    data_dict['poses'] = jt.float32(data_dict['poses']).stop_grad()
+    data_dict['images'] = jt.float32(data_dict.pop('images')).stop_grad()
+    data_dict['poses'] = jt.float32(data_dict.pop('poses')).stop_grad()
 
     return data_dict
 
