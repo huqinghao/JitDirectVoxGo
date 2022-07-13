@@ -196,7 +196,7 @@ class DirectVoxGO(jt.nn.Module):
             # (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().amin(-1)
             for co in np.split(cam_o,100)  # for memory saving
         ]).min(0)
-        self.density.grid[nearest_dist[None,None] <= near_clip] = -100
+        self.density.grid[nearest_dist[None,None] <= near_clip] = -100.
         self.density.grid.requires_grad=True
         del nearest_dist
     @jt.no_grad()
@@ -386,7 +386,7 @@ class DirectVoxGO(jt.nn.Module):
         ray_pts, ray_id, step_id = self.sample_ray(
                 rays_o=rays_o, rays_d=rays_d, **render_kwargs)
         interval = render_kwargs['stepsize'] * self.voxel_size_ratio
-
+        ray_pts = ray_pts.stop_grad()
         # skip known free space
         if self.mask_cache is not None:
             mask = self.mask_cache(ray_pts)
@@ -400,7 +400,7 @@ class DirectVoxGO(jt.nn.Module):
         alpha = self.activate_density(density, interval)
         if self.fast_color_thres > 0:
             mask = (alpha > self.fast_color_thres)
-            ray_pts = ray_pts[mask]
+            ray_pts = ray_pts[mask].stop_grad()
             ray_id = ray_id[mask]
             step_id = step_id[mask]
             density = density[mask]
@@ -408,13 +408,13 @@ class DirectVoxGO(jt.nn.Module):
 
         # compute accumulated transmittance
         #TODO:use object instead of apply(Function)
-        weights, alphainv_last = Alphas2Weights()(alpha, ray_id, N) # weights also different due to alpha
+        weights, alphainv_last = Alphas2Weights.apply(alpha, ray_id, N) # weights also different due to alpha
         
         if self.fast_color_thres > 0:
             mask = (weights > self.fast_color_thres)
             weights = weights[mask]
             alpha = alpha[mask]
-            ray_pts = ray_pts[mask]
+            ray_pts = ray_pts[mask].stop_grad()
             ray_id = ray_id[mask]
             step_id = step_id[mask]
 
@@ -426,7 +426,7 @@ class DirectVoxGO(jt.nn.Module):
             #TODO:
             # k0=jt.Var(np.load("k0.npy"))
             k0 = self.k0(ray_pts)
-        jt.sync_all()
+        # jt.sync_all()
         if self.rgbnet is None:
             # no view-depend effect
             rgb = jt.sigmoid(k0)
@@ -506,7 +506,8 @@ class Raw2Alpha(Function):
         exp = self.exp
         interval = self.interval
         #return render_utils_cuda.raw2alpha_backward(exp, grad_back.contiguous(), interval), None, None
-        return render_utils.raw2alpha_backward(exp, grad_back, interval), None, None
+        grad= render_utils.raw2alpha_backward(exp, grad_back, interval)
+        return grad, None, None
 
 class Raw2Alpha_nonuni(Function):
     def execute(self, density, shift, interval):
@@ -532,9 +533,14 @@ class Alphas2Weights(Function):
     def grad(self, grad_weights, grad_last):
         alpha, weights, T, alphainv_last, i_start, i_end =\
             self.alpha, self.weights, self.T, self.alphainv_last, self.i_start, self.i_end
+        
+        grad_weights.fetch_sync()
+        grad_last.fetch_sync()
+        
         grad = render_utils.alpha2weight_backward(
                 alpha, weights, T, alphainv_last,
                 i_start, i_end, self.n_rays, grad_weights, grad_last)
+        grad.fetch_sync()
         return grad, None, None
 
 

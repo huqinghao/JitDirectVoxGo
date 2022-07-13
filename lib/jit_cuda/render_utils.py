@@ -1,5 +1,5 @@
 import jittor as jt
-
+import numpy as np
 def infer_t_minmax(
     rays_o,
     rays_d,
@@ -276,7 +276,7 @@ __global__ void __set_1_at_ray_seg_start(
     #bugs: ray_id.sum() casue error
     ray_id = jt.cumsum(ray_id,0)
 
-    step_id = jt.empty((total_len,),dtype=ray_id.dtype)
+    step_id = jt.zeros((total_len,),dtype=ray_id.dtype)
 
     # __set_step_id  
     jt.code(inputs=[ray_id,N_steps_cumsum], outputs=[step_id], cuda_header='''
@@ -322,9 +322,9 @@ __global__ void __set_step_id(
 
     rays_start,rays_dir = infer_ray_start_dir(rays_o, rays_d, t_min)
     
-    rays_pts = jt.empty((total_len,3),rays_o.dtype)
+    rays_pts = jt.zeros((total_len,3),rays_o.dtype)
     
-    mask_outbbox = jt.empty((total_len,), dtype='bool')
+    mask_outbbox = jt.zeros((total_len,), dtype='bool')
     
     jit_total_len = jt.int64(total_len)
     
@@ -452,10 +452,7 @@ __global__ void maskcache_lookup_cuda_kernel(
   }
 }
 
-
-
 }  
-    
     
     ''',
     cuda_src=f'''
@@ -476,9 +473,6 @@ __global__ void maskcache_lookup_cuda_kernel(
       const int threads = 512;
       const int blocks = (n_pts + threads - 1) / threads;
 
-
-      
-      
       maskcache_lookup_cuda_kernel<float32><<<blocks, threads>>>(
         world_p,
         xyz_p,
@@ -818,11 +812,11 @@ namespace{
 
     const int i_ray = blockIdx.x * blockDim.x + threadIdx.x;
     if(i_ray<n_rays) {
-      const int64 i_s = i_start[i_ray];
-      const int64 i_e_max = i_end[i_ray];
+      const int i_s = i_start[i_ray];
+      const int i_e_max = i_end[i_ray];
 
       float T_cum = 1.;
-      int64 i;
+      int i;
       for(i=i_s; i<i_e_max; ++i) {
         T[i] = T_cum;
         weight[i] = T_cum * alpha[i];

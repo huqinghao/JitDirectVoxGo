@@ -66,7 +66,10 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
     '''Render images for the given viewpoints; run evaluation if gt given.
     '''
     assert len(render_poses) == len(HW) and len(HW) == len(Ks)
-
+    jt.clean_graph()
+    jt.sync_all()
+    jt.gc()
+    
     if render_factor!=0:
         HW = np.copy(HW)
         Ks = np.copy(Ks)
@@ -99,12 +102,12 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
             for ro, rd, vd in zip(rays_o.split(8192, 0), rays_d.split(8192, 0), viewdirs.split(8192, 0))
         ]
         render_result = {
-            k: jt.contrib.concat([ret[k] for ret in render_result_chunks]).reshape(H,W,-1)
+            k: jt.contrib.concat([ret[k] for ret in render_result_chunks]).reshape(H.item(),W.item(),-1)
             for k in render_result_chunks[0].keys()
         }
-        rgb = render_result['rgb_marched'].cpu().numpy()
-        depth = render_result['depth'].cpu().numpy()
-        bgmap = render_result['alphainv_last'].cpu().numpy()
+        rgb = render_result['rgb_marched'].numpy()
+        depth = render_result['depth'].numpy()
+        bgmap = render_result['alphainv_last'].numpy()
 
         rgbs.append(rgb)
         depths.append(depth)
@@ -391,7 +394,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
     rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler = gather_training_rays()
     # rgb_tr = jt.float32(rgb_tr).stop_grad()
-   
+    rgb_tr = rgb_tr.stop_grad()
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
         def per_voxel_init():
@@ -419,9 +422,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         # renew occupancy grid
         if model.mask_cache is not None and (global_step + 500) % 1000 == 0:
             model.update_occupancy_cache()
-            # jt.clean_graph()
-            # jt.sync_all()
-            # jt.gc()
+            jt.clean_graph()
+            jt.sync_all()
+            jt.gc()
 
         # progress scaling checkpoint
         if global_step in cfg_train.pg_scale:
@@ -450,10 +453,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             sel_b = np.random.randint(0,rgb_tr.shape[0],cfg_train.N_rand)
             sel_r = np.random.randint(0,rgb_tr.shape[1],cfg_train.N_rand)
             sel_c = np.random.randint(0,rgb_tr.shape[2],cfg_train.N_rand)
-            target = rgb_tr[sel_b, sel_r, sel_c]
-            rays_o = rays_o_tr[sel_b, sel_r, sel_c]
-            rays_d = rays_d_tr[sel_b, sel_r, sel_c]
-            viewdirs = viewdirs_tr[sel_b, sel_r, sel_c]
+            target = rgb_tr[sel_b, sel_r, sel_c].stop_grad()
+            rays_o = rays_o_tr[sel_b, sel_r, sel_c].stop_grad()
+            rays_d = rays_d_tr[sel_b, sel_r, sel_c].stop_grad()
+            viewdirs = viewdirs_tr[sel_b, sel_r, sel_c].stop_grad()
         else:
             raise NotImplementedError
         #TODO:
@@ -498,7 +501,6 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
             loss += cfg_train.weight_rgbper * rgbper_loss
         optimizer.backward(loss)
-        # print(model.density.grid.is_stop_grad())
         if global_step<cfg_train.tv_before and global_step>cfg_train.tv_after and global_step%cfg_train.tv_every==0:
             if cfg_train.weight_tv_density>0:
                 model.density_total_variation_add_grad(
@@ -521,7 +523,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             eps_time = time.time() - time0
             eps_time_str = f'{eps_time//3600:02.0f}:{eps_time//60%60:02.0f}:{eps_time%60:02.0f}'
             tqdm.write(f'scene_rep_reconstruction ({stage}): iter {global_step:6d} / '
-                       f'Loss: {loss.item():.9f} / PSNR: {np.mean(psnr_lst):5.2f} / '
+                       f'Loss: {loss.item():.9f} / PSNR: {np.mean(psnr_lst):5.6f} / '
                        f'Eps: {eps_time_str}')
             psnr_lst = []
             
@@ -547,6 +549,8 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             'optimizer_state_dict': optimizer.state_dict(),
         }, last_ckpt_path)
         print(f'scene_rep_reconstruction ({stage}): saved checkpoints at', last_ckpt_path)
+
+    return model
 
 
 def train(args, cfg, data_dict):
@@ -594,7 +598,7 @@ def train(args, cfg, data_dict):
     jt.sync_all()
     jt.gc()
 
-    scene_rep_reconstruction(
+    fine_model = scene_rep_reconstruction(
             args=args, cfg=cfg,
             cfg_model=cfg.fine_model_and_render, cfg_train=cfg.fine_train,
             xyz_min=xyz_min_fine, xyz_max=xyz_max_fine,
@@ -607,6 +611,8 @@ def train(args, cfg, data_dict):
     eps_time = time.time() - eps_time
     eps_time_str = f'{eps_time//3600:02.0f}:{eps_time//60%60:02.0f}:{eps_time%60:02.0f}'
     print('train: finish (eps time', eps_time_str, ')')
+    
+    return fine_model
 
 
 if __name__=='__main__':
@@ -673,23 +679,25 @@ if __name__=='__main__':
 
     # train
     if not args.render_only:
-        train(args, cfg, data_dict)
-
+        model = train(args, cfg, data_dict)
+    else:
+        model = None
     # load model for rendring
     if args.render_test or args.render_train or args.render_val or args.render_video:
-        if args.ft_path:
-            ckpt_path = args.ft_path
-        else:
-            ckpt_path = os.path.join(cfg.basedir, cfg.expname, 'fine_last.tar')
-        ckpt_name = ckpt_path.split('/')[-1][:-4]
-        if cfg.data.ndc:
-            model_class = dmpigo.DirectMPIGO
-        elif cfg.data.unbounded_inward:
-            model_class = dcvgo.DirectContractedVoxGO
-        else:
-            model_class = dvgo.DirectVoxGO
-        model = utils.load_model(model_class, ckpt_path)
-        #model = utils.load_model(model_class, ckpt_path).to(device)
+        if model is None:
+            if args.ft_path:
+                ckpt_path = args.ft_path
+            else:
+                ckpt_path = os.path.join(cfg.basedir, cfg.expname, 'fine_last.tar')
+            ckpt_name = ckpt_path.split('/')[-1][:-4]
+            if cfg.data.ndc:
+                model_class = dmpigo.DirectMPIGO
+            elif cfg.data.unbounded_inward:
+                model_class = dcvgo.DirectContractedVoxGO
+            else:
+                model_class = dvgo.DirectVoxGO
+            model = utils.load_model(model_class, ckpt_path)
+            #model = utils.load_model(model_class, ckpt_path).to(device)
         stepsize = cfg.fine_model_and_render.stepsize
         render_viewpoints_kwargs = {
             'model': model,
@@ -706,7 +714,7 @@ if __name__=='__main__':
             },
             'prefix':cfg.data.datadir.split("/")[-1]
         }
-
+    ckpt_name = "debug"
     # render trainset and eval
     if args.render_train:
         testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_train_{ckpt_name}')
@@ -715,7 +723,7 @@ if __name__=='__main__':
                 render_poses=data_dict['poses'][data_dict['i_train']],
                 HW=data_dict['HW'][data_dict['i_train']],
                 Ks=data_dict['Ks'][data_dict['i_train']],
-                gt_imgs=[data_dict['images'][i].cpu().numpy() for i in data_dict['i_train']],
+                gt_imgs=[data_dict['images'][i].numpy() for i in data_dict['i_train']],
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)

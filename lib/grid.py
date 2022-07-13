@@ -59,7 +59,7 @@ class DenseGrid(nn.Module):
         '''
         shape = xyz.shape[:-1]
         xyz_ = xyz.reshape(1,1,1,-1,3)
-        ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
+        ind_norm = (((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1).stop_grad()
         # TODO
         # nn.grid_sample too slow 
         out = grid_sampler.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
@@ -243,7 +243,7 @@ class MaskGrid(nn.Module):
             density = nn.max_pool3d(jt.array(st['model_state_dict']['density.grid']), kernel_size=3, stride=1, padding=1)
             alpha = 1 - jt.exp(-nn.softplus(density + st['model_state_dict']['act_shift']) * st['model_kwargs']['voxel_size_ratio'])
             mask = (alpha >= self.mask_cache_thres).squeeze(0).squeeze(0)
-            mask = mask.bool()
+            # mask = mask.bool()
             xyz_min = jt.float32(st['model_kwargs']['xyz_min'])
             xyz_max = jt.float32(st['model_kwargs']['xyz_max'])
         else:

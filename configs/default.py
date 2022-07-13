@@ -20,8 +20,8 @@ data = dict(
     rand_bkgd=False,              # use random background during training
     half_res=False,               # [TODO]
     movie_render_kwargs=dict(),
-    near=2.0,                     # [TODO]
-    far=6.0,                      # [TODO]
+    # near=2.0,                     # [TODO]
+    # far=6.0,                      # [TODO]
     # Below are forward-facing llff specific settings.
     ndc=False,                    # use ndc coordinate (only for forward-facing; not support yet)
     spherify=False,               # inward-facing
