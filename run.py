@@ -161,7 +161,16 @@ def seed_everything():
 def load_everything(args, cfg):
     '''Load images / poses / camera settings / data split.
     '''
-    data_dict = load_data(cfg.data)
+    if os.path.exists(os.path.join(f"""{cfg.data.npy_datadir}""","data_dict.npy")):
+        data_dict = np.load(os.path.join(cfg.data.npy_datadir,"data_dict.npy"),allow_pickle=True).tolist()
+        print(f"loaded input data by npy in {cfg.data.npy_datadir} dir")
+    else:
+        data_dict = load_data(cfg.data)
+        if cfg.data.npy_datadir is not None:
+            os.makedirs(cfg.data.npy_datadir, exist_ok=True)
+            np.save(os.path.join(cfg.data.npy_datadir,"data_dict.npy"), data_dict, allow_pickle=True)
+            print(f"Save loaded data in {cfg.data.npy_datadir} dir as npy file")
+                
 
     # remove useless field
     kept_keys = {

@@ -30,7 +30,7 @@ data = dict(
     height=None,                  # enforce image height
     llffhold=8,                   # testsplit
     load_depths=False,            # load depth
-
+    npy_datadir=None,
     # Below are unbounded inward-facing specific settings.
     unbounded_inward=False,
     unbounded_inner_r=1.0,
