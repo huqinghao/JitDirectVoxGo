@@ -170,12 +170,13 @@ __global__ void adam_upd_with_perlr_cuda_kernel(
 }
     ''',
     cuda_src=f'''
-    @alias(param, out0)
     @alias(grad, in0)
     @alias(step_size, in1)
+    @alias(perlr, in2)
+    @alias(param, out0)
     @alias(exp_avg, out1)
     @alias(exp_avg_sq, out2)
-    @alias(perlr, out3)
+   
     
     const size_t N = in0->numel();
 

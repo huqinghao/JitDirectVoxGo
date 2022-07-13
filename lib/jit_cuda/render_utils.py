@@ -409,15 +409,17 @@ def maskcache_lookup(world, xyz, xyz2ijk_scale, xyz2ijk_shift):
     assert(world.ndim==3)
     assert(xyz.ndim==2)
     assert(xyz.size(1)==3)
-    
-    return jt.code((xyz.size(0),),world.dtype,[world,xyz,xyz2ijk_scale, xyz2ijk_shift],
+    mask=jt.zeros((xyz.size(0),),dtype=world.dtype)
+    jt.code(inputs=[world,xyz,xyz2ijk_scale, xyz2ijk_shift],outputs=[mask],
     cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <vector>
-
+#include<iostream>
+using std::cout;
+using std::endl;
 namespace{
 
 
@@ -464,8 +466,8 @@ __global__ void maskcache_lookup_cuda_kernel(
     @alias(xyz2ijk_scale, in2)
     @alias(xyz2ijk_shift, in3)
     @alias(maskcache, out0)
-    
-    cudaMemsetAsync(out0_p, 0, out0->size);
+    //cout<<"out0->size:"<<out0->size<<endl;
+   
 
     const int sz_i = world_shape0;
     const int sz_j = world_shape1;
@@ -493,6 +495,7 @@ __global__ void maskcache_lookup_cuda_kernel(
     if (err != cudaSuccess) 
         printf("Error in maskcache_lookup: %s\\n", cudaGetErrorString(err));
     ''')
+    return mask
     
     
     
@@ -501,8 +504,10 @@ def raw2alpha(
     shift, 
     interval):
     assert(density.ndim==1)
-    return jt.code([density.shape,density.shape],[density.dtype,density.dtype],[density],
-    cuda_header='''
+    exp_d=jt.empty(density.shape,dtype=density.dtype)
+    alpha=jt.empty(density.shape,dtype=density.dtype)
+    jt.code(inputs=[density],outputs=[exp_d,alpha],
+        cuda_header='''
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -537,8 +542,9 @@ __global__ void raw2alpha_cuda_kernel(
   @alias(alpha, out1)
   
   const int n_pts = density_shape0;
-  cudaMemsetAsync(out0_p, 0, out0->size);
-  cudaMemsetAsync(out1_p, 0, out1->size);
+  // TODO: size 
+  //cudaMemsetAsync(out0_p, 0, out0->size);
+  //cudaMemsetAsync(out1_p, 0, out1->size);
   
   if(n_pts!=0) {{ 
     const int threads = 512;
@@ -548,13 +554,13 @@ __global__ void raw2alpha_cuda_kernel(
       {shift}, {interval}, n_pts,
       exp_d_p,
       alpha_p);
-    
   }}
   
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) 
           printf("Error in raw2alpha: %s\\n", cudaGetErrorString(err));
   ''')
+    return exp_d,alpha
  
     
     
@@ -734,9 +740,7 @@ __global__ void raw2alpha_nonuni_backward_cuda_kernel(
     
     
 def alpha2weight(alpha, ray_id, n_rays):
-    assert(alpha.ndim==1)
-    assert(ray_id.ndim==1)
-    assert(alpha.numel()==ray_id.numel())
+  
     
     n_pts =  jt.int64(alpha.size(0))
     threads = jt.int64(512)
@@ -746,10 +750,14 @@ def alpha2weight(alpha, ray_id, n_rays):
     alphainv_last = jt.ones((n_rays),alpha.dtype)
     i_start = jt.zeros((n_rays),'int64')
     i_end = jt.zeros((n_rays),'int64')
-    
     if (n_pts== 0):
-          return weight,T,alphainv_last,i_start,i_end
+        #print("WARNING:zeros points")
+        return weight,T,alphainv_last,i_start,i_end
     
+    assert(alpha.ndim==1)
+    assert(ray_id.ndim==1)
+    assert(alpha.numel()==ray_id.numel())
+
     jt.code(inputs=[ray_id],outputs=[i_start,i_end],cuda_header='''
             
 #include <cuda.h>
@@ -943,3 +951,15 @@ __global__ void alpha2weight_backward_cuda_kernel(
     if (err != cudaSuccess) 
             printf("Error in alpha2weight_backward: %s\\n", cudaGetErrorString(err));
     ''')
+
+
+
+# if __name__ == '__main__':
+#     import numpy as np
+#     jt.use_cuda=2
+#     shift=jt.float32(-13.815509796142578)
+#     interval=jt.float32(0.5)
+#     density=jt.array(np.load("../DirectVoxGO/density.npy"))
+#     exp_d,alpha=raw2alpha(density,shift,interval)
+#     print(alpha[0:10])
+

@@ -7,13 +7,13 @@ def interpolate(X, size=None, scale_factor=None, mode='trilinear', align_corners
     if mode != "trilinear":
         return jt.nn.interpolate(X,size,scale_factor,mode,align_corners,tf_mode)
     else:
-        return UpSampler3d()(X, size, align_corners)
+        return up_sampler_3d_forward_cuda(X, size, align_corners)
 
-class UpSampler3d(Function):
+# class UpSampler3d(Function):
 
-    def execute(self, input, size, align_corners):
+#     def execute(self, input, size, align_corners):
               
-        return up_sampler_3d_forward_cuda(input,size,align_corners)
+#         return up_sampler_3d_forward_cuda(input,size,align_corners)
 
 
 def up_sampler_3d_forward_cuda(

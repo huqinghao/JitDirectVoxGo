@@ -2,6 +2,34 @@ from jittor import Function
 import jittor as jt
 from .grid_sampler_backward import grid_sampler_3d_backward_cuda
 from .grid_sampler_cuda import grid_sampler_3d_forward_cuda
+
+
+def check_grid_sampler_common(input, grid):
+    if input.shape[0] != grid.shape[0]:
+        raise ValueError("grid_sampler(): expected grid and input to have same batch size, but got \
+                        input with sizes {} and grid with sizes {} ".format(input.shape,grid.shape))
+    if grid.shape[-1] != len(input.shape)-2:
+        raise ValueError("grid_sampler(): expected grid to have size {} in last \
+                        dimension, but got grid with sizes {}".format(len(input.shape) - 2,grid.shape))
+    for i in range(2,len(input.shape)):
+        if input.shape[i]<=0:
+            raise ValueError("grid_sampler(): expected input to have non-empty spatial dimensions, \
+                        but input has sizes {}  with dimension  {} being \
+                     empty".format(input.shape,i))
+
+
+def  check_grid_sampler_3d(input,grid,interpolation_mode):
+    if len(input.shape)!=5  or  len(input.shape)!= len(grid.shape):
+        raise ValueError(" grid_sampler(): expected 5D input and grid with same number of \
+            dimensions, but got input with sizes {} and grid with sizes {}".format(input.shape, grid.shape))
+    if len(input.shape)!=5  or  len(input.shape)!= len(grid.shape):
+        raise ValueError(" grid_sampler(): expected 5D input and grid with same number of \
+            dimensions, but got input with sizes {} and grid with sizes {}".format(input.shape, grid.shape))
+    if len(input.shape) == 5 and interpolation_mode =="bicubic":
+        raise ValueError("grid_sampler(): bicubic interpolation only supports 4D input")
+
+
+
 def grid_sample(
     input,
     grid,
@@ -20,7 +48,8 @@ def grid_sample(
             "to be 'zeros', 'border', or 'reflection', "
             "but got: '{}'".format(padding_mode)
         )
-
+    check_grid_sampler_common(input,grid)
+    check_grid_sampler_3d(input,grid,interpolation_mode=mode)
     if mode == "bilinear":
         mode_enum = 0
     elif mode == "nearest":

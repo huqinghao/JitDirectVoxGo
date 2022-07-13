@@ -611,10 +611,10 @@ if __name__ == '__main__':
     # print(np.sum(grid_torch.grad.cpu().numpy()!=0))
     # print(np.sum(ind_norm_torch.grad.cpu().numpy()!=0))
     
-    print(np.sum(np.abs(diff)>1e-5))
-    print(np.sum(np.abs(diff2)>1e-5))
-    index=np.abs(diff)>1e-4
     print(np.max(np.abs(diff)))
-
+    # print(np.sum(np.abs(diff2)>1e-5))
+   
+    # print(np.max(np.abs(diff)))
+    # print(np.max(np.abs(diff)))
     # print(grad_input.data[index].flatten()[0:100])
     # print(grid_torch.grad.cpu().numpy()[index].flatten()[0:100])

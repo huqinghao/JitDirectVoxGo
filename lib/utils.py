@@ -6,6 +6,7 @@ from typing import List, Optional
 import jittor as jt
 from jittor import init
 from jittor import nn
+from jittor.optim import SGD
 # from jt import Tensor
 
 # import jt
@@ -62,7 +63,7 @@ def filter_parameters(parameters):
     return params
 
 def log10(x):
-    return jt.log(x)/math.log(10.0)
+    return jt.log(x)/jt.log(10.0)
 ''' Misc
 '''
 mse2psnr = lambda x : -10. * log10(x)
@@ -98,6 +99,7 @@ def create_optimizer_or_freeze_model(model, cfg_train, global_step):
             print(f'create_optimizer_or_freeze_model: param {k} freeze')
             param.requires_grad = False
     return MaskedAdam(param_group,lr=lr)
+    #return SGD(param_group,lr=0.001)
 
 
 ''' Checkpoint utils

@@ -18,6 +18,7 @@ from jittor import Function
 from . import grid
 
 #TODO: utils
+import time
 from lib.jit_cuda import render_utils
 # from jt.utils.cpp_extension import load
 # parent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -29,6 +30,8 @@ from lib.jit_cuda import render_utils
 #         verbose=True)
 #TODO: check the value
 raw2alpha = lambda raw, shift,interval: 1.-jt.pow(1+jt.exp(raw+shift),-interval)
+
+# alpha2weights = lambda raw, shift,interval: 1.-jt.pow(1+jt.exp(raw+shift),-interval)
 
 '''Model'''
 class DirectVoxGO(jt.nn.Module):
@@ -49,8 +52,10 @@ class DirectVoxGO(jt.nn.Module):
         self.fast_color_thres = fast_color_thres
 
         # determine based grid resolution
+        
         self.num_voxels_base = num_voxels_base
-        self.voxel_size_base = ((self.xyz_max - self.xyz_min).prod() / self.num_voxels_base).pow(1/3)
+        #TODO: make it private
+        self._voxel_size_base = ((self.xyz_max - self.xyz_min).prod() / self.num_voxels_base).pow(1/3)
 
         # determine the density bias shift
         self.alpha_init = alpha_init
@@ -66,7 +71,7 @@ class DirectVoxGO(jt.nn.Module):
         self.density_type = density_type
         self.density_config = density_config
         self.density = grid.create_grid(
-                density_type, channels=1, world_size=self.world_size,
+                density_type, channels=1, world_size=self._world_size,
                 xyz_min=self.xyz_min, xyz_max=self.xyz_max,
                 config=self.density_config)
 
@@ -84,7 +89,7 @@ class DirectVoxGO(jt.nn.Module):
             # color voxel grid  (coarse stage)
             self.k0_dim = 3
             self.k0 = grid.create_grid(
-                k0_type, channels=self.k0_dim, world_size=self.world_size,
+                k0_type, channels=self.k0_dim, world_size=self._world_size,
                 xyz_min=self.xyz_min, xyz_max=self.xyz_max,
                 config=self.k0_config)
             self.rgbnet = None
@@ -95,13 +100,13 @@ class DirectVoxGO(jt.nn.Module):
             else:
                 self.k0_dim = rgbnet_dim
             self.k0 = grid.create_grid(
-                    k0_type, channels=self.k0_dim, world_size=self.world_size,
+                    k0_type, channels=self.k0_dim, world_size=self._world_size,
                     xyz_min=self.xyz_min, xyz_max=self.xyz_max,
                     config=self.k0_config)
             self.rgbnet_direct = rgbnet_direct
 
             self.viewfreq= jt.float32([(2 ** i) for i in range(viewbase_pe)]).stop_grad()
-            dim0 = (3+3*viewbase_pe*2)
+            dim0 = int(3+3*viewbase_pe*2)
             if self.rgbnet_full_implicit:
                 pass
             elif rgbnet_direct:
@@ -126,7 +131,7 @@ class DirectVoxGO(jt.nn.Module):
         self.mask_cache_path = mask_cache_path
         self.mask_cache_thres = mask_cache_thres
         if mask_cache_world_size is None:
-            mask_cache_world_size = self.world_size
+            mask_cache_world_size = self._world_size
         else:
             mask_cache_world_size = jt.array(mask_cache_world_size,dtype='int32')
         if mask_cache_path is not None and mask_cache_path:
@@ -154,13 +159,16 @@ class DirectVoxGO(jt.nn.Module):
     def _set_grid_resolution(self, num_voxels):
         # Determine grid resolution
         self.num_voxels = num_voxels
-        self.voxel_size = ((self.xyz_max - self.xyz_min).prod() / num_voxels).pow(1/3).stop_grad()
-        self.world_size = ((self.xyz_max - self.xyz_min) / self.voxel_size).long().stop_grad()
-        self.voxel_size_ratio = (self.voxel_size / self.voxel_size_base).stop_grad()
-        print('dvgo: voxel_size      ', self.voxel_size)
-        print('dvgo: world_size      ', self.world_size)
-        print('dvgo: voxel_size_base ', self.voxel_size_base)
-        print('dvgo: voxel_size_ratio', self.voxel_size_ratio)
+        #TODO: make it private
+        self._voxel_size = ((self.xyz_max - self.xyz_min).prod() / num_voxels).pow(1/3).stop_grad()
+        ##TODO: make it private
+        self._world_size = ((self.xyz_max - self.xyz_min) / self._voxel_size).long().stop_grad()
+        #TODO: make it private
+        self._voxel_size_ratio = (self._voxel_size / self._voxel_size_base).stop_grad()
+        print('dvgo: voxel_size      ', self._voxel_size)
+        print('dvgo: world_size      ', self._world_size)
+        print('dvgo: voxel_size_base ', self._voxel_size_base)
+        print('dvgo: voxel_size_ratio', self._voxel_size_ratio)
 
     def get_kwargs(self):
         return {
@@ -171,7 +179,7 @@ class DirectVoxGO(jt.nn.Module):
             'num_voxels': self.num_voxels,
             'num_voxels_base': self.num_voxels_base,
             'alpha_init': self.alpha_init,
-            'voxel_size_ratio': self.voxel_size_ratio,
+            'voxel_size_ratio': self._voxel_size_ratio,
             'mask_cache_path': self.mask_cache_path,
             'mask_cache_thres': self.mask_cache_thres,
             'mask_cache_world_size': list(self.mask_cache.mask.shape),
@@ -182,38 +190,71 @@ class DirectVoxGO(jt.nn.Module):
             'k0_config': self.k0_config,
             **self.rgbnet_kwargs,
         }
-
+    def load_state_dict(self,param_dict):
+        uniq_set = set()
+        ps = {}
+        stack = []
+        def callback(parents, k, v, n):
+            stack.append(str(k))
+            dc = v.__dict__
+            if isinstance(v, nn.ParameterList):
+                dc = v.params
+            for k2, p in dc.items():
+                if isinstance(k2, str) and k2.startswith("_"): continue
+                if isinstance(p, jt.Var):
+                    if id(p) in uniq_set: continue
+                    uniq_set.add(id(p))
+                    pname = ".".join(stack[1:]+[str(k2)])
+                    if p.requires_grad:
+                        dc[k2]=jt.array(param_dict[pname])
+                    else:
+                        dc[k2]=jt.array(param_dict[pname]).stop_grad()
+                    # v.update(p)
+                    if len(pname) > len(p.name()):
+                        p.name(pname)
+        def callback_leave(parents, k, v, n):
+            stack.pop()
+        self.dfs([], None, callback, callback_leave)
     @jt.no_grad()
     def maskout_near_cam_vox(self, cam_o, near_clip):
         # maskout grid points that between cameras and their near planes
         self_grid_xyz = jt.stack(jt.meshgrid(
-            jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.world_size[0].item()),
-            jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.world_size[1].item()),
-            jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.world_size[2].item()),
+            jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self._world_size[0].item()),
+            jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self._world_size[1].item()),
+            jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self._world_size[2].item()),
         ), -1)
         nearest_dist = jt.stack([
             (self_grid_xyz.unsqueeze(-2) - jt.float32(co)).pow(2).sum(-1).sqrt().min(-1)
             # (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().amin(-1)
             for co in np.split(cam_o,100)  # for memory saving
         ]).min(0)
-        self.density.grid[nearest_dist[None,None] <= near_clip] = -100
+        
+    
+        mask=(nearest_dist[None,None] <= near_clip)
+        self.density.grid[mask]=-100.
         self.density.grid.requires_grad=True
-        del nearest_dist
+
+        # self.density.grid.requires_grad=True
+        # sub_grid=self.density.grid[nearest_dist[None,None] <= near_clip]
+        # sub_grid.requires_grad=False
+        # self.density.grid[nearest_dist[None,None] <= near_clip]=sub_grid
+        
+        # del nearest_dist
     @jt.no_grad()
     def scale_volume_grid(self, num_voxels):
         print('dvgo: scale_volume_grid start')
-        ori_world_size = self.world_size
+        ori_world_size = self._world_size
         self._set_grid_resolution(num_voxels)
-        print('dvgo: scale_volume_grid scale world_size from', ori_world_size.tolist(), 'to', self.world_size.tolist())
+        print('dvgo: scale_volume_grid scale world_size from', ori_world_size.tolist(), 'to', self._world_size.tolist())
 
-        self.density.scale_volume_grid(self.world_size)
-        self.k0.scale_volume_grid(self.world_size)
+        self.density.scale_volume_grid(self._world_size)
+        self.k0.scale_volume_grid(self._world_size)
 
-        if np.prod(self.world_size.tolist()) <= 256**3:
+        if np.prod(self._world_size.tolist()) <= 256**3:
             self_grid_xyz = jt.stack(jt.meshgrid(
-                jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.world_size[0].item()),
-                jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.world_size[1].item()),
-                jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self.world_size[2].item()),
+                jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self._world_size[0].item()),
+                jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self._world_size[1].item()),
+                jt.linspace(self.xyz_min[2].item(), self.xyz_max[2].item(), self._world_size[2].item()),
             ), -1)
             self_alpha = nn.max_pool3d(self.activate_density(self.density.get_dense_grid()), kernel_size=3, padding=1, stride=1)[0,0]
             self.mask_cache = grid.MaskGrid(
@@ -224,6 +265,7 @@ class DirectVoxGO(jt.nn.Module):
 
     @jt.no_grad()
     def update_occupancy_cache(self):
+        print("update_occupancy_cache ")
         cache_grid_xyz = jt.stack(jt.meshgrid(
             jt.linspace(self.xyz_min[0].item(), self.xyz_max[0].item(), self.mask_cache.mask.shape[0]),
             jt.linspace(self.xyz_min[1].item(), self.xyz_max[1].item(), self.mask_cache.mask.shape[1]),
@@ -240,13 +282,13 @@ class DirectVoxGO(jt.nn.Module):
         eps_time = time.time()
 
         # N_samples = int(np.linalg.norm(np.array(self.density.shape[2:])+1) / stepsize) + 1
-        N_samples = int(np.linalg.norm(np.array(self.world_size.numpy())+1) / stepsize) + 1
+        N_samples = int(np.linalg.norm(np.array(self._world_size.numpy())+1) / stepsize) + 1
         rng = jt.arange(N_samples)[None].float().stop_grad()
         count = jt.zeros_like(self.density.get_dense_grid()).stop_grad()
         #TODO:
         # device = rng.device
         for rays_o_, rays_d_ in zip(rays_o_tr.split(imsz), rays_d_tr.split(imsz)):
-            ones = grid.DenseGrid(1, self.world_size, self.xyz_min, self.xyz_max)
+            ones = grid.DenseGrid(1, self._world_size, self.xyz_min, self.xyz_max)
             optimizer=jt.optim.SGD([ones.grid],0)
             if irregular_shape:
                 rays_o_ = rays_o_.split(10000)
@@ -271,7 +313,7 @@ class DirectVoxGO(jt.nn.Module):
                 # t_max = jt.maximum(rate_a, rate_b).amin(-1).clamp(min=near, max=far)
                 # jt.clamp()
                 t_min = jt.minimum(rate_a, rate_b).max(-1).clamp(min_v=near, max_v=far)
-                step = stepsize * self.voxel_size * rng
+                step = stepsize * self._voxel_size * rng
                 interpx = (t_min[...,None] + step/rays_d.norm(dim=-1,keepdim=True))
                 rays_pts = rays_o[...,None,:] + rays_d[...,None,:] * interpx[...,None]
                 #TODO: backward not supported...... fuck
@@ -292,21 +334,23 @@ class DirectVoxGO(jt.nn.Module):
         return count
 
     def density_total_variation_add_grad(self, weight, dense_mode):
-        w = weight * self.world_size.max() / 128
+        w = weight * self._world_size.max() / 128
         self.density.total_variation_add_grad(w, w, w, dense_mode)
 
     def k0_total_variation_add_grad(self, weight, dense_mode):
-        w = weight * self.world_size.max() / 128
+        w = weight * self._world_size.max() / 128
         self.k0.total_variation_add_grad(w, w, w, dense_mode)
 
     def activate_density(self, density, interval=None):
-        interval = interval if interval is not None else self.voxel_size_ratio
+        interval = interval if interval is not None else self._voxel_size_ratio
         shape = density.shape
+        if density.numel()==0:
+            return jt.array([])
         # use object instead of Apply(Function)
-        alpha = Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
-        return alpha
+        # alpha = Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
+        # return alpha
         #debug
-        #return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
+        return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
         
 
     def hit_coarse_geo(self, rays_o, rays_d, near, far, stepsize, **render_kwargs):
@@ -316,13 +360,13 @@ class DirectVoxGO(jt.nn.Module):
         #TODO:
         #rays_o = rays_o.reshape(-1, 3).contiguous()
         #rays_d = rays_d.reshape(-1, 3).contiguous()
-        
+        # 
         rays_o = rays_o.reshape(-1, 3)
         rays_d = rays_d.reshape(-1, 3)
-        stepdist = stepsize * self.voxel_size
+        stepdist = stepsize * self._voxel_size
         #TODO: not implemented
         
-        ray_pts, mask_outbbox, ray_id = render_utils.sample_pts_on_rays(
+        ray_pts, mask_outbbox, ray_id,= render_utils.sample_pts_on_rays(
                 rays_o, rays_d, self.xyz_min, self.xyz_max, near, far, stepdist)[:3]
 
         # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
@@ -351,9 +395,9 @@ class DirectVoxGO(jt.nn.Module):
         #TODO: far is re-set 
         far = 1e9  # the given far can be too small while rays stop when hitting scene bbox
         #TODO:
-        #rays_o = rays_o.contiguous()
-        #rays_d = rays_d.contiguous()
-        stepdist = stepsize * self.voxel_size
+        # rays_o = rays_o.copy()
+        # rays_d = rays_d.copy()
+        stepdist = stepsize * self._voxel_size
         #TODO: render_utils_cuda.sample_pts_on_rays not implemeted:
         # ray_pts, mask_outbbox, ray_id,step_id=jt.Var(np.load("ray_pts.npy")),\
         #                                     jt.Var(np.load("mask_outbbox.npy")),\
@@ -385,7 +429,7 @@ class DirectVoxGO(jt.nn.Module):
         # sample points on rays: no problem
         ray_pts, ray_id, step_id = self.sample_ray(
                 rays_o=rays_o, rays_d=rays_d, **render_kwargs)
-        interval = render_kwargs['stepsize'] * self.voxel_size_ratio
+        interval = render_kwargs['stepsize'] * self._voxel_size_ratio
 
         # skip known free space
         if self.mask_cache is not None:
@@ -395,7 +439,11 @@ class DirectVoxGO(jt.nn.Module):
             step_id = step_id[mask]
 
         # query for alpha w/ post-activation
-        density = self.density(ray_pts) # no problem
+        # ray_pts=jt.array(np.load("../DirectVoxGO/ray_pts.npy"))
+        # xyz_min=jt.array(np.load("../DirectVoxGO/xyz_min.npy")).stop_grad()
+        # xyz_max=jt.array(np.load("../DirectVoxGO/xyz_max.npy")).stop_grad()
+        # self.density.xyz_max
+        density = self.density(ray_pts.detach()) # no problem
         # alpha2weight has some mismatch with torch (err about 1e-7) # TODO
         alpha = self.activate_density(density, interval)
         if self.fast_color_thres > 0:
@@ -408,8 +456,10 @@ class DirectVoxGO(jt.nn.Module):
 
         # compute accumulated transmittance
         #TODO:use object instead of apply(Function)
-        weights, alphainv_last = Alphas2Weights()(alpha, ray_id, N) # weights also different due to alpha
-        
+        weights, alphainv_last = Alphas2Weights.apply(alpha, ray_id, N) # weights also different due to alpha
+
+        #weights_bk = alpha * jt.cumprod(jt.concat([jt.ones((alpha.shape[0], 1)), (1.-alpha + 1e-10).reshape((alpha.shape[0], 1))], -1), -1)[:, :-1]
+        #print((weights-weights_bk).abs().max())
         if self.fast_color_thres > 0:
             mask = (weights > self.fast_color_thres)
             weights = weights[mask]
@@ -425,58 +475,67 @@ class DirectVoxGO(jt.nn.Module):
             #debug
             #TODO:
             # k0=jt.Var(np.load("k0.npy"))
-            k0 = self.k0(ray_pts)
-        jt.sync_all()
-        if self.rgbnet is None:
-            # no view-depend effect
-            rgb = jt.sigmoid(k0)
-        else:
-            # view-dependent color emission
-            if self.rgbnet_direct:
-                k0_view = k0
+            k0 = self.k0(ray_pts.detach())
+        # jt.sync_all()
+        if ray_pts.numel()>0:
+            if self.rgbnet is None:
+                # no view-depend effect
+                rgb = jt.sigmoid(k0)
             else:
-                k0_view = k0[:, 3:]
-                k0_diffuse = k0[:, :3]
-            viewdirs_emb = (viewdirs.unsqueeze(-1) * self.viewfreq).flatten(-2)
-            viewdirs_emb = jt.contrib.concat([viewdirs, viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
-            viewdirs_emb = viewdirs_emb.flatten(0,-2)[ray_id]
-            rgb_feat = jt.contrib.concat([k0_view, viewdirs_emb], -1)
-            rgb_logit = self.rgbnet(rgb_feat)
-            if self.rgbnet_direct:
-                rgb = jt.sigmoid(rgb_logit)
-            else:
-                rgb = jt.sigmoid(rgb_logit + k0_diffuse)
+                # view-dependent color emission
+                if self.rgbnet_direct:
+                    k0_view = k0
+                else:
+                    k0_view = k0[:, 3:]
+                    k0_diffuse = k0[:, :3]
+                viewdirs_emb = (viewdirs.unsqueeze(-1) * self.viewfreq).flatten(-2)
+                viewdirs_emb = jt.contrib.concat([viewdirs, viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
+                viewdirs_emb = viewdirs_emb.flatten(0,-2)[ray_id]
+                rgb_feat = jt.contrib.concat([k0_view, viewdirs_emb], -1)
+                rgb_logit = self.rgbnet(rgb_feat)
+                if self.rgbnet_direct:
+                    rgb = jt.sigmoid(rgb_logit)
+                else:
+                    rgb = jt.sigmoid(rgb_logit + k0_diffuse)
 
-        # Ray marching
-        #TODO: scatter --> segment_coo
-        #TODO: whether it need gradient
-        # weights=jt.Var(np.load("weights.npy"))
-        # ray_id=jt.Var(np.load("ray_id.npy"))
-        rgb_marched = scatter(x=jt.zeros([N, 3]),dim=0,
-                src=(weights.unsqueeze(-1) * rgb),
-                index=ray_id,
-                reduce='add')
-        rgb_marched += (alphainv_last.unsqueeze(-1) * render_kwargs['bg'])
-        ret_dict.update({
+            # Ray marching
+            #TODO: scatter --> segment_coo
+            #TODO: whether it need gradient
+            # weights=jt.Var(np.load("weights.npy"))
+            # ray_id=jt.Var(np.load("ray_id.npy"))
+            rgb_marched_t = scatter(x=jt.zeros([N, 3]),dim=0,
+                    src=(weights.unsqueeze(-1) * rgb),
+                    index=ray_id,
+                    reduce='add')
+            if render_kwargs.get('rand_bkgd', False) and global_step is not None:
+                rgb_marched  = rgb_marched_t+(alphainv_last.unsqueeze(-1) * jt.rand_like(rgb_marched_t))
+            else:
+                rgb_marched = rgb_marched_t+(alphainv_last.unsqueeze(-1) * render_kwargs['bg'])
+        else:
+            rgb=jt.array([]).reshape((0,3))
+            rgb_marched_t=jt.array([])
+            rgb_marched=jt.zeros([N, 3])+alphainv_last.unsqueeze(-1) * render_kwargs['bg']
+        ret_dict={
             'alphainv_last': alphainv_last,
             'weights': weights,
             'rgb_marched': rgb_marched,
             'raw_alpha': alpha,
             'raw_rgb': rgb,
             'ray_id': ray_id,
-        })
+        }
         
-
-        if render_kwargs.get('render_depth', False):
-            with jt.no_grad():
-                #TODO: 
-                # scatter --> segment_coo
-                depth = scatter( x=jt.zeros([N]),dim=0,
-                        src=(weights * step_id),
-                        index=ray_id,
-                        reduce='add')
-            ret_dict.update({'depth': depth})
-
+        if alpha.shape[0]>0:
+            if render_kwargs.get('render_depth', False):
+                with jt.no_grad():
+                    #TODO: 
+                    # scatter --> segment_coo
+                    depth = scatter( x=jt.zeros([N]),dim=0,
+                            src=(weights * step_id),
+                            index=ray_id,
+                            reduce='add')
+                ret_dict.update({'depth': depth})
+        else:
+            ret_dict.update({'depth': jt.zeros([N])})
         return ret_dict
 
 #TODO:
@@ -497,7 +556,7 @@ class Raw2Alpha(Function):
         if density.requires_grad:
             self.exp=exp
             self.interval = interval
-        return alpha
+        return alpha.detach()
     def grad(self, grad_back):
         '''
         alpha' = interval * ((1 + exp(density + shift)) ^ (-interval-1)) * exp(density + shift)'
@@ -506,7 +565,9 @@ class Raw2Alpha(Function):
         exp = self.exp
         interval = self.interval
         #return render_utils_cuda.raw2alpha_backward(exp, grad_back.contiguous(), interval), None, None
-        return render_utils.raw2alpha_backward(exp, grad_back, interval), None, None
+        grad=render_utils.raw2alpha_backward(exp, grad_back, interval)
+        #np.save("density_grad0.npy",grad.data)
+        return grad, None, None
 
 class Raw2Alpha_nonuni(Function):
     def execute(self, density, shift, interval):
@@ -525,16 +586,28 @@ class Alphas2Weights(Function):
     def execute(self, alpha, ray_id, N):
         weights, T, alphainv_last, i_start, i_end = render_utils.alpha2weight(alpha, ray_id, N)
         if alpha.requires_grad:
+            #print(alpha.shape)
             self.alpha, self.weights, self.T, self.alphainv_last, self.i_start, self.i_end\
-            =alpha, weights, T, alphainv_last, i_start, i_end
+            =alpha.copy(), weights.copy(), T, alphainv_last.copy(), i_start, i_end
             self.n_rays = N
-        return weights, alphainv_last
+        return weights.detach(), alphainv_last.detach()
     def grad(self, grad_weights, grad_last):
+        #jt.sync_all(True)
         alpha, weights, T, alphainv_last, i_start, i_end =\
             self.alpha, self.weights, self.T, self.alphainv_last, self.i_start, self.i_end
+        #print(alpha.shape)
+        grad_weights.fetch_sync()
+        grad_last.fetch_sync()
         grad = render_utils.alpha2weight_backward(
                 alpha, weights, T, alphainv_last,
                 i_start, i_end, self.n_rays, grad_weights, grad_last)
+         
+        
+        # np.save("grad_weights.npy",grad_weights.data)
+        # np.save("grad_last.npy",grad_last.data)
+        #np.save("grad.npy",grad.data)
+        #grad.detach()
+        grad.fetch_sync()
         return grad, None, None
 
 
@@ -614,7 +687,9 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
 
 def get_rays_of_a_view(H, W, K, c2w, ndc, inverse_y, flip_x, flip_y, mode='center'):
     rays_o, rays_d = get_rays(H, W, K, c2w, inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y, mode=mode)
+    
     viewdirs = rays_d / rays_d.norm(dim=-1, keepdim=True)
+    # jt.norm()
     if ndc:
         rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
     return rays_o, rays_d, viewdirs

@@ -98,13 +98,15 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
             {k: v for k, v in model(ro, rd, vd, **render_kwargs).items() if k in keys}
             for ro, rd, vd in zip(rays_o.split(8192, 0), rays_d.split(8192, 0), viewdirs.split(8192, 0))
         ]
+
+        dest_keys=['rgb_marched','depth','alphainv_last']
         render_result = {
-            k: jt.contrib.concat([ret[k] for ret in render_result_chunks]).reshape(H,W,-1)
-            for k in render_result_chunks[0].keys()
+            k: jt.contrib.concat([ret[k] for ret in render_result_chunks]).reshape((int(H),int(W),-1))
+            for k in dest_keys
         }
-        rgb = render_result['rgb_marched'].cpu().numpy()
-        depth = render_result['depth'].cpu().numpy()
-        bgmap = render_result['alphainv_last'].cpu().numpy()
+        rgb = render_result['rgb_marched'].numpy()
+        depth = render_result['depth'].numpy()
+        bgmap = render_result['alphainv_last'].numpy()
 
         rgbs.append(rgb)
         depths.append(depth)
@@ -175,18 +177,19 @@ def load_everything(args, cfg):
     #     data_dict['images'] = [jt.array(im,dtype="float32").stop_grad() for im in data_dict['images']]
     # else:
     data_dict['images'] = jt.float32(data_dict['images']).stop_grad()
-    
+    data_dict['poses'] = jt.float32(data_dict['poses']).stop_grad()
+
     return data_dict
 
 
 def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far):
     #TODO: bugs, min(inf,data) cause NaN errr 
     # no nan error in gpu mode, it seems that the bug hiddens in the cpu op
-    # xyz_min = jt.array([np.inf, np.inf, np.inf]).stop_grad()
+    # xyz_min = jt.array([np.inf, np.inf, np.inf],dtype="float32").stop_grad()
     # xyz_max = (-xyz_min).stop_grad()
     #   
-    max_val=np.finfo(np.float16).max
-    min_val=np.finfo(np.float16).min
+    max_val=np.finfo(np.float32).max
+    min_val=np.finfo(np.float32).min
     xyz_min = jt.array([max_val, max_val,max_val]).stop_grad()
     xyz_max = jt.array([min_val, min_val,min_val]).stop_grad()
 
@@ -243,9 +246,9 @@ def compute_bbox_by_coarse_geo(model_class, model_path, thres):
     eps_time = time.time()
     model = utils.load_model(model_class, model_path)
     interp = jt.stack(jt.meshgrid(
-        jt.linspace(0, 1, model.world_size[0].item()),
-        jt.linspace(0, 1, model.world_size[1].item()),
-        jt.linspace(0, 1, model.world_size[2].item()),
+        jt.linspace(0, 1, model._world_size[0].item()),
+        jt.linspace(0, 1, model._world_size[1].item()),
+        jt.linspace(0, 1, model._world_size[2].item()),
     ), -1)
     dense_xyz = model.xyz_min * (1-interp) + model.xyz_max * interp
     density = model.density(dense_xyz)
@@ -306,7 +309,10 @@ def load_existed_model(args, cfg, cfg_train, reload_ckpt_path):
             model, optimizer, reload_ckpt_path, args.no_reload_optimizer)
     return model, optimizer, start
 
-
+# def mse_loss(output, target, reduction="mean"):
+#     return jt.pow((output-target),2).reduce(reduction)
+def mse_loss(output, target, reduction="mean"):
+    return ((output-target)*(output-target)).sum()/output.numel()
 def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, data_dict, stage, coarse_ckpt_path=None):
     # init
     # device = jt.device('cuda' if jt.cuda.is_available() else 'cpu')
@@ -390,15 +396,27 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler
 
     rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler = gather_training_rays()
+    # rays_o_tr=jt.array(np.load("../DirectVoxGO/rays_o_tr.npy"))
+    # rays_d_tr=jt.array(np.load("../DirectVoxGO/rays_d_tr.npy"))
+    # viewdirs_tr=jt.array(np.load("../DirectVoxGO/viewdirs_tr.npy"))
     # rgb_tr = jt.float32(rgb_tr).stop_grad()
-   
+    # with jt.no_grad():
+    #     model.k0.grid=jt.array(np.load("../DirectVoxGO/k0.npy"))
+    #     model.density.grid=jt.array(np.load("../DirectVoxGO/density.npy"))
+    # model.density.grid.requires_grad=True
+    # model.k0.grid.requires_grad=True
+    # optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
+    
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
         def per_voxel_init():
-            cnt = model.voxel_count_views(
-                    rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
-                    stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
-                    irregular_shape=data_dict['irregular_shape'])
+            if True:
+                cnt = model.voxel_count_views(
+                        rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
+                        stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
+                        irregular_shape=data_dict['irregular_shape'])
+            else:
+                cnt=jt.array(np.load("count.npy"))
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[utils.squeeze(cnt) <= 2] = False
             model.mask_cache.mask = model.mask_cache.mask.bool()
@@ -472,7 +490,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
         # gradient descent step
         optimizer.zero_grad()
-        loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)
+        loss = cfg_train.weight_main * mse_loss(render_result['rgb_marched'], target)
         psnr = utils.mse2psnr(loss.detach())
         if cfg_train.weight_entropy_last > 0:
             pout = render_result['alphainv_last'].clamp(1e-6, 1-1e-6)
@@ -495,7 +513,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             # loss += cfg_train.weight_distortion * loss_distortion
         if cfg_train.weight_rgbper > 0:
             rgbper = (render_result['raw_rgb'] - target[render_result['ray_id']]).pow(2).sum(-1)
-            rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
+            rgbper_loss = (rgbper * (render_result['weights'].detach())).sum() / len(rays_o)
             loss += cfg_train.weight_rgbper * rgbper_loss
         optimizer.backward(loss)
         # print(model.density.grid.is_stop_grad())
@@ -538,16 +556,21 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 'optimizer_state_dict': optimizer.state_dict(),
             }, path)
             print(f'scene_rep_reconstruction ({stage}): saved checkpoints at', path)
-
+        jt.clean_graph()
+        # density_save_name="density_iter_{}.npy".format(global_step)
+        # np.save(density_save_name,model.density.grid.data)
+        # k0_save_name="k0_iter_{}.npy".format(global_step)
+        # np.save(k0_save_name,model.k0.grid.data)
+        #print("Iter {} density min {}".format(global_step,model.density.grid.data.min().item()))
     if global_step != -1:
         jt.save({
-            'global_step': global_step,
+            'global_step': global_step, 
             'model_kwargs': model.get_kwargs(),
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }, last_ckpt_path)
         print(f'scene_rep_reconstruction ({stage}): saved checkpoints at', last_ckpt_path)
-
+    return model
 
 def train(args, cfg, data_dict):
 
@@ -564,6 +587,10 @@ def train(args, cfg, data_dict):
     # coarse geometry searching (only works for inward bounded scenes)
     eps_coarse = time.time()
     xyz_min_coarse, xyz_max_coarse = compute_bbox_by_cam_frustrm(args=args, cfg=cfg, **data_dict)
+    # import torch
+    # xyz_min_coarse=jt.array(np.load("../DirectVoxGO/xyz_min_coarse.npy"))
+    # xyz_max_coarse=jt.array(np.load("../DirectVoxGO/xyz_max_coarse.npy"))
+    
     if cfg.coarse_train.N_iters > 0:
         scene_rep_reconstruction(
                 args=args, cfg=cfg,
@@ -594,7 +621,7 @@ def train(args, cfg, data_dict):
     jt.sync_all()
     jt.gc()
 
-    scene_rep_reconstruction(
+    model=scene_rep_reconstruction(
             args=args, cfg=cfg,
             cfg_model=cfg.fine_model_and_render, cfg_train=cfg.fine_train,
             xyz_min=xyz_min_fine, xyz_max=xyz_max_fine,
@@ -607,7 +634,7 @@ def train(args, cfg, data_dict):
     eps_time = time.time() - eps_time
     eps_time_str = f'{eps_time//3600:02.0f}:{eps_time//60%60:02.0f}:{eps_time%60:02.0f}'
     print('train: finish (eps time', eps_time_str, ')')
-
+    return model
 
 if __name__=='__main__':
 
@@ -616,7 +643,7 @@ if __name__=='__main__':
     args = parser.parse_args()
     cfg = mmcv.Config.fromfile(args.config)
 
-    jt.flags.use_cuda = 1
+    jt.flags.use_cuda = 2
     # init enviroment
     # if jt.cuda.is_available():
     #     jt.set_default_tensor_type('jt.cuda.FloatTensor')
@@ -673,15 +700,14 @@ if __name__=='__main__':
 
     # train
     if not args.render_only:
-        train(args, cfg, data_dict)
+        model=train(args, cfg, data_dict)
 
-    # load model for rendring
-    if args.render_test or args.render_train or args.render_val or args.render_video:
+    elif args.render_test or args.render_train or args.render_val or args.render_video:
         if args.ft_path:
             ckpt_path = args.ft_path
         else:
             ckpt_path = os.path.join(cfg.basedir, cfg.expname, 'fine_last.tar')
-        ckpt_name = ckpt_path.split('/')[-1][:-4]
+        
         if cfg.data.ndc:
             model_class = dmpigo.DirectMPIGO
         elif cfg.data.unbounded_inward:
@@ -690,32 +716,33 @@ if __name__=='__main__':
             model_class = dvgo.DirectVoxGO
         model = utils.load_model(model_class, ckpt_path)
         #model = utils.load_model(model_class, ckpt_path).to(device)
-        stepsize = cfg.fine_model_and_render.stepsize
-        render_viewpoints_kwargs = {
-            'model': model,
-            'ndc': cfg.data.ndc,
-            'render_kwargs': {
-                'near': data_dict['near'],
-                'far': data_dict['far'],
-                'bg': 1 if cfg.data.white_bkgd else 0,
-                'stepsize': stepsize,
-                'inverse_y': cfg.data.inverse_y,
-                'flip_x': cfg.data.flip_x,
-                'flip_y': cfg.data.flip_y,
-                'render_depth': True,
-            },
-            'prefix':cfg.data.datadir.split("/")[-1]
-        }
+    stepsize = cfg.fine_model_and_render.stepsize
+    # ckpt_name = os.path.join(cfg.basedir, , 'fine_last.tar').split('/')[-1][:-4]
+    render_viewpoints_kwargs = {
+        'model': model,
+        'ndc': cfg.data.ndc,
+        'render_kwargs': {
+            'near': data_dict['near'],
+            'far': data_dict['far'],
+            'bg': 1 if cfg.data.white_bkgd else 0,
+            'stepsize': stepsize,
+            'inverse_y': cfg.data.inverse_y,
+            'flip_x': cfg.data.flip_x,
+            'flip_y': cfg.data.flip_y,
+            'render_depth': True,
+        },
+        'prefix':cfg.data.datadir.split("/")[-1]
+    }
 
     # render trainset and eval
     if args.render_train:
-        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_train_{ckpt_name}')
+        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_train_{cfg.expname}')
         os.makedirs(testsavedir, exist_ok=True)
         rgbs, depths, bgmaps = render_viewpoints(
                 render_poses=data_dict['poses'][data_dict['i_train']],
                 HW=data_dict['HW'][data_dict['i_train']],
                 Ks=data_dict['Ks'][data_dict['i_train']],
-                gt_imgs=[data_dict['images'][i].cpu().numpy() for i in data_dict['i_train']],
+                gt_imgs=[data_dict['images'][i].numpy() for i in data_dict['i_train']],
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)
@@ -724,7 +751,7 @@ if __name__=='__main__':
 
     # render testset and eval
     if args.render_test:
-        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_test_{ckpt_name}')
+        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_test_{cfg.expname}')
         os.makedirs(testsavedir, exist_ok=True)
         rgbs, depths, bgmaps = render_viewpoints(
                 render_poses=data_dict['poses'][data_dict['i_test']],
@@ -738,13 +765,13 @@ if __name__=='__main__':
         imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
     
     if args.render_val:
-        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_val_{ckpt_name}')
+        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_val_{cfg.expname}')
         os.makedirs(testsavedir, exist_ok=True)
         rgbs, depths, bgmaps = render_viewpoints(
                 render_poses=data_dict['poses'][data_dict['i_val']],
                 HW=data_dict['HW'][data_dict['i_val']],
                 Ks=data_dict['Ks'][data_dict['i_val']],
-                gt_imgs=[data_dict['images'][i].cpu().numpy() for i in data_dict['i_val']],
+                gt_imgs=[data_dict['images'][i].numpy() for i in data_dict['i_val']],
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)
@@ -753,7 +780,7 @@ if __name__=='__main__':
 
     # render video
     if args.render_video:
-        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_video_{ckpt_name}')
+        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_video_{cfg.expname}')
         os.makedirs(testsavedir, exist_ok=True)
         rgbs, depths, bgmaps = render_viewpoints(
                 render_poses=data_dict['render_poses'],

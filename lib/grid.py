@@ -44,7 +44,7 @@ class DenseGrid(nn.Module):
     def __init__(self, channels, world_size, xyz_min, xyz_max, **kwargs):
         super(DenseGrid, self).__init__()
         self.channels = channels
-        self.world_size = world_size
+        self._world_size = world_size.copy().stop_grad()
         # self.register_buffer('xyz_min', jt.Tensor(xyz_min))
         # self.register_buffer('xyz_max', jt.Tensor(xyz_max))
         self.xyz_min=jt.array(xyz_min.copy()).stop_grad()
@@ -52,19 +52,25 @@ class DenseGrid(nn.Module):
         # self.grid = (jt.zeros([1, channels, *world_size]))
         #TODO: jittor *Var
         self.grid =jt.zeros([1, channels, *world_size.tolist()])
-
     def execute(self, xyz):
         '''
         xyz: global coordinates to query
         '''
+        if xyz.numel()==0:
+            return jt.array([])
         shape = xyz.shape[:-1]
         xyz_ = xyz.reshape(1,1,1,-1,3)
         ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)).flip(-1) * 2 - 1
+        # ind_norm = ((xyz_ - self.xyz_min) / (self.xyz_max - self.xyz_min)) * 2 - 1
         # TODO
         # nn.grid_sample too slow 
+        #out = grid_sampler.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+        # print("grid_min:{}".format(grid.min().item()))
         out = grid_sampler.grid_sample(self.grid, ind_norm, mode='bilinear', align_corners=True)
+
         # out = jt.randn((*shape,self.channels))
         # out= jt.Var(np.load("dense_grid.npy"))
+        
         out = out.reshape(self.channels,-1).t().reshape(*shape,self.channels)
         if self.channels == 1:
             out = out.squeeze(-1)
@@ -78,7 +84,7 @@ class DenseGrid(nn.Module):
             #     mode='trilinear', align_corners=True)
             self.grid = up_sample3d.interpolate(self.grid, size=tuple(new_world_size), \
                 mode='trilinear', align_corners=True)
-            #TODO: tmp fix
+            #TODO: use new  optimizer  or the parameters will not 
             self.grid.requires_grad=True
 
     def total_variation_add_grad(self, wx, wy, wz, dense_mode):
@@ -93,10 +99,11 @@ class DenseGrid(nn.Module):
     @jt.no_grad()
     def __isub__(self, val):
         self.grid-= val
+        self.grid.requires_grad=True
         return self
 
     def extra_repr(self):
-        return f'channels={self.channels}, world_size={self.world_size.tolist()}'
+        return f'channels={self.channels}, world_size={self._world_size.tolist()}'
 
 
 ''' Vector-Matrix decomposited grid
@@ -106,7 +113,7 @@ class TensoRFGrid(nn.Module):
     def __init__(self, channels, world_size, xyz_min, xyz_max, config):
         super(TensoRFGrid, self).__init__()
         self.channels = channels
-        self.world_size = world_size
+        self._world_size = world_size
         self.config = config
         self.xyz_min=jt.float32(xyz_min).stop_grad()
         self.xyz_max=jt.float32(xyz_max).stop_grad()
@@ -199,7 +206,7 @@ class TensoRFGrid(nn.Module):
         return grid
 
     def extra_repr(self):
-        return f'channels={self.channels}, world_size={self.world_size.tolist()}, n_comp={self.config["n_comp"]}'
+        return f'channels={self.channels}, world_size={self._world_size.tolist()}, n_comp={self.config["n_comp"]}'
 
 def compute_tensorf_feat(xy_plane, xz_plane, yz_plane, x_vec, y_vec, z_vec, f_vec, ind_norm):
     # Interp feature (feat shape: [n_pts, n_comp])
@@ -243,18 +250,18 @@ class MaskGrid(nn.Module):
             density = nn.max_pool3d(jt.array(st['model_state_dict']['density.grid']), kernel_size=3, stride=1, padding=1)
             alpha = 1 - jt.exp(-nn.softplus(density + st['model_state_dict']['act_shift']) * st['model_kwargs']['voxel_size_ratio'])
             mask = (alpha >= self.mask_cache_thres).squeeze(0).squeeze(0)
-            mask = mask.bool()
-            xyz_min = jt.float32(st['model_kwargs']['xyz_min'])
-            xyz_max = jt.float32(st['model_kwargs']['xyz_max'])
+            mask = mask.bool().stop_grad()
+            xyz_min = jt.float32(st['model_kwargs']['xyz_min']).stop_grad()
+            xyz_max = jt.float32(st['model_kwargs']['xyz_max']).stop_grad()
         else:
-            mask = mask.bool()
-            xyz_min = jt.float32(xyz_min)
-            xyz_max = jt.float32(xyz_max)
+            mask = mask.bool().stop_grad()
+            xyz_min = jt.float32(xyz_min).stop_grad()
+            xyz_max = jt.float32(xyz_max).stop_grad()
 
-        self.mask=mask
+        self.mask=mask.stop_grad()
         xyz_len = xyz_max - xyz_min
-        self.xyz2ijk_scale= (jt.float32(list(mask.shape)) - 1) / xyz_len
-        self.xyz2ijk_shift= -xyz_min * self.xyz2ijk_scale
+        self.xyz2ijk_scale= ((jt.float32(list(mask.shape)) - 1) / xyz_len).stop_grad()
+        self.xyz2ijk_shift= (-xyz_min * self.xyz2ijk_scale).stop_grad()
 
     @jt.no_grad()
     def execute(self, xyz):
@@ -262,9 +269,9 @@ class MaskGrid(nn.Module):
         @xyz:   [..., 3] the xyz in global coordinate.
         '''
         shape = xyz.shape[:-1]
-        xyz = xyz.reshape(-1, 3)
+        _xyz = xyz.reshape(-1, 3)
         #TODO:not implemented yet
-        mask = render_utils.maskcache_lookup(self.mask, xyz, self.xyz2ijk_scale, self.xyz2ijk_shift)
+        mask = render_utils.maskcache_lookup(self.mask, _xyz, self.xyz2ijk_scale, self.xyz2ijk_shift)
         # mask=jt.Var(np.load("mask.npy"))
         mask = mask.reshape(shape)
         return mask

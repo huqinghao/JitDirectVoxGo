@@ -388,7 +388,7 @@ __global__ void grid_sampler_3d_kernel(
         output_strides_ptr,
         {interpolation_mode},
         {exp_avgpadding_mode_sq},
-        {align_corners_txt}
+        true
       );
 
     }}

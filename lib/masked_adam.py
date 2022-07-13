@@ -2,6 +2,7 @@ import os
 import jittor as jt
 from jittor import init
 from jittor import nn
+import numpy as np
 # from jt.utils.cpp_extension import load
 #TODO:
 # parent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,8 +38,18 @@ class MaskedAdam(jt.optim.Adam):
     def set_pervoxel_lr(self, count):
         assert self.param_groups[0]['params'][0].shape == count.shape
         self.per_lr = count.float() / count.max()
+    # TODO: state_dict not same with pytorch
+    # def state_dict(self):
 
-    @jt.no_grad()
+    #     state = {"defaults": self.defaults,self.param_groups}
+    #     return state
+
+    # def load_state_dict(self, state):
+
+    #     for k,v in state["defaults"].items():
+    #         setattr(self, k, v)
+
+    
     def step(self):
         n = self.n_step
         jt.flags.node_order = 1
@@ -51,6 +62,7 @@ class MaskedAdam(jt.optim.Adam):
 
             for param,grad, v, m in zip(group["params"], group["grads"], group["values"], group["m"]):
                 if param.is_stop_grad(): 
+                    print("It has grad but  is set stop grad")
                     continue
                     # Lazy state initialization
                     # if len(state) == 0:
@@ -77,3 +89,4 @@ class MaskedAdam(jt.optim.Adam):
                             param, grad, m, v,
                             n, beta1, beta2, lr, eps)
                 param.requires_grad=True
+        self.post_step()
