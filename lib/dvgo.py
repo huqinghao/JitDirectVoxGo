@@ -226,7 +226,7 @@ class DirectVoxGO(jt.nn.Module):
         nearest_dist = jt.stack([
             (self_grid_xyz.unsqueeze(-2) - jt.float32(co)).pow(2).sum(-1).sqrt().min(-1)
             # (self_grid_xyz.unsqueeze(-2) - co).pow(2).sum(-1).sqrt().amin(-1)
-            for co in np.split(cam_o,100)  # for memory saving
+            for co in np.split(cam_o,10)  # for memory saving
         ]).min(0)
         
     
