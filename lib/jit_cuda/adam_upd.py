@@ -141,7 +141,7 @@ def adam_upd_with_perlr(
     lr, 
     eps):
     step_size = jt.float32(lr * math.sqrt(1 - pow(beta2, step)) / (1 - pow(beta1, step)))
-    return jt.code(inputs=[grad,step_size],outputs=[param,exp_avg, exp_avg_sq, perlr],
+    return jt.code(inputs=[grad,step_size, perlr],outputs=[param,exp_avg, exp_avg_sq],
     cuda_header='''
 
 #include <cuda.h>
