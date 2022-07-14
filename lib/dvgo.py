@@ -505,13 +505,16 @@ class DirectVoxGO(jt.nn.Module):
                     index=ray_id,
                     reduce='add')
             if render_kwargs.get('rand_bkgd', False) and global_step is not None:
-                rgb_marched  = rgb_marched_t+(alphainv_last.unsqueeze(-1) * jt.rand_like(rgb_marched_t))
+                rgb_marched  = rgb_marched_t+(alphainv_last.unsqueeze(-1) * render_kwargs['rand_bkgd_color'])
             else:
                 rgb_marched = rgb_marched_t+(alphainv_last.unsqueeze(-1) * render_kwargs['bg'])
         else:
             rgb=jt.array([]).reshape((0,3))
             rgb_marched_t=jt.array([])
-            rgb_marched=jt.zeros([N, 3])+alphainv_last.unsqueeze(-1) * render_kwargs['bg']
+            if render_kwargs.get('rand_bkgd', False) and global_step is not None:
+                rgb_marched  = jt.zeros([N, 3])+(alphainv_last.unsqueeze(-1) * render_kwargs['rand_bkgd_color'])
+            else:
+                rgb_marched=jt.zeros([N, 3])+alphainv_last.unsqueeze(-1) * render_kwargs['bg']
         ret_dict={
             'alphainv_last': alphainv_last,
             'weights': weights,
@@ -789,10 +792,10 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
     eps_time = time.time()
     N = sum(((im.shape[0] * im.shape[1]) for im in rgb_tr_ori))
     # rgb_tr = jt.zeros([N, 3], device=DEVICE)
-    rgb_tr = jt.zeros([N, 3])
-    rays_o_tr = jt.zeros_like(rgb_tr)
-    rays_d_tr = jt.zeros_like(rgb_tr)
-    viewdirs_tr = jt.zeros_like(rgb_tr)
+    rgb_tr = jt.zeros([N, 4])
+    rays_o_tr = jt.zeros([N, 3])
+    rays_d_tr = jt.zeros_like(rays_o_tr)
+    viewdirs_tr = jt.zeros_like(rays_o_tr)
     imsz = []
     top = 0
     for c2w, img, (H, W), K in zip(train_poses, rgb_tr_ori, HW, Ks):

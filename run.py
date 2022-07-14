@@ -168,6 +168,8 @@ def load_everything(args, cfg):
     if os.path.exists(os.path.join(f"""{cfg.data.npy_datadir}""","data_dict.npy")):
         data_dict = np.load(os.path.join(cfg.data.npy_datadir,"data_dict.npy"),allow_pickle=True).tolist()
         print(f"loaded input data by npy in {cfg.data.npy_datadir} dir")
+        data_dict["near"] = cfg.data.near
+        data_dict["far"] = cfg.data.far
     else:
         data_dict = load_data(cfg.data)
         if cfg.data.npy_datadir is not None:
@@ -484,6 +486,20 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         # print('get_training_rays_flatten: finish (eps time:', eps_time, 'sec)')
         # print(model.density.grid.is_stop_grad())
         # volume rendering
+        
+        if target.shape[-1] == 4:
+            if cfg.data.rand_bkgd:
+                rand_bkgd_color = jt.randn((target.shape[0],3))
+                target = target[...,:3]*target[...,-1:] + rand_bkgd_color*(1.-target[...,-1:])
+                render_kwargs.update({
+                    "rand_bkgd_color":rand_bkgd_color
+                })
+            else:
+                if cfg.data.white_bkgd:
+                    target = target[...,:3]*target[...,-1:] + (1.-target[...,-1:])
+                else:
+                    target = target[...,:3]*target[...,-1:]
+        
         render_result = model(
             rays_o, rays_d, viewdirs,
             global_step=global_step, is_train=True,
@@ -708,6 +724,15 @@ if __name__=='__main__':
         else:
             model_class = dvgo.DirectVoxGO
         model = utils.load_model(model_class, ckpt_path)
+
+    raw_images = data_dict.pop('images')
+    if raw_images.shape[-1] == 4:
+        if cfg.data.white_bkgd:
+            raw_images = raw_images[...,:3]*raw_images[...,-1:] + (1.-raw_images[...,-1:])
+        else:
+            raw_images = raw_images[...,:3]*raw_images[...,-1:]
+    data_dict['images'] = raw_images
+        
         #model = utils.load_model(model_class, ckpt_path).to(device)
     stepsize = cfg.fine_model_and_render.stepsize
     # ckpt_name = os.path.join(cfg.basedir, , 'fine_last.tar').split('/')[-1][:-4]

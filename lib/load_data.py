@@ -58,11 +58,11 @@ def load_data(args):
         # near, far = 2., 6.
         near, far = args.near, args.far
 
-        if images.shape[-1] == 4:
-            if args.white_bkgd:
-                images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-            else:
-                images = images[...,:3]*images[...,-1:]
+        # if images.shape[-1] == 4:
+        #     if args.white_bkgd:
+        #         images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
+        #     else:
+        #         images = images[...,:3]*images[...,-1:]
 
     elif args.dataset_type == 'blendedmvs':
         images, poses, render_poses, hwf, K, i_split = load_blendedmvs_data(args.datadir)
