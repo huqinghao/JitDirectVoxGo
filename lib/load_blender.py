@@ -66,7 +66,20 @@ def load_blender_data(basedir, half_res=False, testskip=1):
     for s in splits:
         with open(os.path.join(basedir, 'transforms_{}.json'.format(s)), 'r') as fp:
             metas[s] = json.load(fp)
-    metas['train']['frames'] = metas['train']['frames'] + metas['val']['frames']
+            
+    # metas['train']['frames'] = metas['train']['frames'] + metas['val']['frames']
+    
+    filter_frames = []
+
+    for frame in metas['train']["frames"]:
+        file_path = os.path.join(basedir, frame['file_path'] + '.png')
+        print(file_path)
+        if os.path.exists(file_path):
+            filter_frames.append(frame)
+
+    metas['train']['frames'] = filter_frames
+    
+    
     
     all_imgs = []
     all_poses = []
