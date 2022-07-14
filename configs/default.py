@@ -51,6 +51,7 @@ coarse_train = dict(
     ray_sampler='random',         # ray sampling strategies
     weight_main=1.0,              # weight of photometric loss
     weight_entropy_last=0.01,     # weight of background entropy loss
+    weight_alpha=0,
     weight_nearclip=0,
     weight_distortion=0,
     weight_rgbper=0.1,            # weight of per-point rgb loss
@@ -71,6 +72,7 @@ fine_train.update(dict(
     N_iters=20000,
     pervoxel_lr=False,
     ray_sampler='in_maskcache',
+    weight_alpha=0,
     weight_entropy_last=0.001,
     weight_rgbper=0.01,
     pg_scale=[1000, 2000, 3000, 4000],

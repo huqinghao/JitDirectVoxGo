@@ -487,7 +487,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         # print(model.density.grid.is_stop_grad())
         # volume rendering
         
-        target_alpha=(1.-target[...,-1:])
+        target_alpha=target[...,-1:].copy()
         if target.shape[-1] == 4:
             if cfg.data.rand_bkgd:
                 rand_bkgd_color = jt.randn((target.shape[0],3))
@@ -500,6 +500,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                     target = target[...,:3]*target[...,-1:] + (1.-target[...,-1:])
                 else:
                     target = target[...,:3]*target[...,-1:]
+
         render_result = model(
             rays_o, rays_d, viewdirs,
             global_step=global_step, is_train=True,
@@ -509,10 +510,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         # gradient descent step
         optimizer.zero_grad()
         loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)
-        alpha_loss=nn.mse_loss(render_result['alphainv_last'],target_alpha)
-        
         psnr = utils.mse2psnr(loss.detach())
-        loss+=alpha_loss
+        if cfg_train.weight_alpha > 0:
+            alpha_loss=nn.mse_loss(target_alpha, 1-render_result['alphainv_last'])
+            loss += cfg_train.weight_alpha
         if cfg_train.weight_entropy_last > 0:
             pout = render_result['alphainv_last'].clamp(1e-6, 1-1e-6)
             entropy_last_loss = -(pout*jt.log(pout) + (1-pout)*jt.log(1-pout)).mean()
