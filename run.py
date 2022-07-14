@@ -137,6 +137,11 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
             rgb8 = utils.to8b(rgbs[i])
             filename = os.path.join(savedir, prefix+'_r_{}.png'.format(i))
             imageio.imwrite(filename, rgb8)
+        if len(psnrs):
+            with open(os.path.join(savedir, "val_psnr.txt"),'w') as f:
+                f.writelines([str(psnr)+"\n" for psnr in psnrs ])
+                f.write(f'\n\nTesting psnr {np.mean(psnrs)} (avg))')
+                f.close()
 
     rgbs = np.array(rgbs)
     depths = np.array(depths)
@@ -169,7 +174,7 @@ def load_everything(args, cfg):
             os.makedirs(cfg.data.npy_datadir, exist_ok=True)
             np.save(os.path.join(cfg.data.npy_datadir,"data_dict.npy"), data_dict, allow_pickle=True)
             print(f"Save loaded data in {cfg.data.npy_datadir} dir as npy file")
-                
+
     # remove useless field
     kept_keys = {
             'hwf', 'HW', 'Ks', 'near', 'far', 'near_clip',
@@ -734,8 +739,8 @@ if __name__=='__main__':
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)
-        imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
-        imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
+        # imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
+        # imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
 
     # render testset and eval
     if args.render_test:
@@ -749,8 +754,8 @@ if __name__=='__main__':
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)
-        imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
-        imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
+        # imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
+        # imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
     
     if args.render_val:
         testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_val_{cfg.expname}')
@@ -763,8 +768,8 @@ if __name__=='__main__':
                 savedir=testsavedir,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)
-        imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
-        imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
+        # imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
+        # imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
 
     # render video
     if args.render_video:
