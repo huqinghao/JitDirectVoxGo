@@ -29,7 +29,7 @@ from lib.jit_cuda import render_utils
 #             for path in ['cuda/render_utils.cpp', 'cuda/render_utils_kernel.cu']],
 #         verbose=True)
 #TODO: check the value
-raw2alpha = lambda raw, shift,interval: 1.-jt.pow(1+jt.exp(raw+shift),-interval)
+# raw2alpha = lambda raw, shift,interval: 1.-jt.pow(1+jt.exp(raw+shift),-interval)
 
 # alpha2weights = lambda raw, shift,interval: 1.-jt.pow(1+jt.exp(raw+shift),-interval)
 
@@ -347,10 +347,7 @@ class DirectVoxGO(jt.nn.Module):
         if density.numel()==0:
             return jt.array([])
         # use object instead of Apply(Function)
-        # alpha = Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
-        # return alpha
-        #debug
-        return raw2alpha(density.flatten(),self.act_shift,interval).reshape(shape)
+        return Raw2Alpha.apply(density.flatten(), self.act_shift, interval).reshape(shape)
         
 
     def hit_coarse_geo(self, rays_o, rays_d, near, far, stepsize, **render_kwargs):

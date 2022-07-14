@@ -317,10 +317,7 @@ def load_existed_model(args, cfg, cfg_train, reload_ckpt_path):
             model, optimizer, reload_ckpt_path, args.no_reload_optimizer)
     return model, optimizer, start
 
-# def mse_loss(output, target, reduction="mean"):
-#     return jt.pow((output-target),2).reduce(reduction)
-def mse_loss(output, target, reduction="mean"):
-    return ((output-target)*(output-target)).sum()/output.numel()
+
 def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, data_dict, stage, coarse_ckpt_path=None):
     # init
     # device = jt.device('cuda' if jt.cuda.is_available() else 'cpu')
@@ -404,16 +401,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler
 
     rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz, batch_index_sampler = gather_training_rays()
-    # rays_o_tr=jt.array(np.load("../DirectVoxGO/rays_o_tr.npy"))
-    # rays_d_tr=jt.array(np.load("../DirectVoxGO/rays_d_tr.npy"))
-    # viewdirs_tr=jt.array(np.load("../DirectVoxGO/viewdirs_tr.npy"))
-    # rgb_tr = jt.float32(rgb_tr).stop_grad()
-    # with jt.no_grad():
-    #     model.k0.grid=jt.array(np.load("../DirectVoxGO/k0.npy"))
-    #     model.density.grid=jt.array(np.load("../DirectVoxGO/density.npy"))
-    # model.density.grid.requires_grad=True
-    # model.k0.grid.requires_grad=True
-    # optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
+    
     
     # view-count-based learning rate
     if cfg_train.pervoxel_lr:
@@ -498,7 +486,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
         # gradient descent step
         optimizer.zero_grad()
-        loss = cfg_train.weight_main * mse_loss(render_result['rgb_marched'], target)
+        loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)
         psnr = utils.mse2psnr(loss.detach())
         if cfg_train.weight_entropy_last > 0:
             pout = render_result['alphainv_last'].clamp(1e-6, 1-1e-6)
@@ -547,13 +535,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             eps_time = time.time() - time0
             eps_time_str = f'{eps_time//3600:02.0f}:{eps_time//60%60:02.0f}:{eps_time%60:02.0f}'
             tqdm.write(f'scene_rep_reconstruction ({stage}): iter {global_step:6d} / '
-                       f'Loss: {loss.item():.9f} / PSNR: {np.mean(psnr_lst):5.2f} / '
+                       f'Loss: {loss.item():.9f} / PSNR: {np.mean(psnr_lst):5.6f} / '
                        f'Eps: {eps_time_str}')
             psnr_lst = []
             
-            # jt.clean_graph()
-            # jt.sync_all
-            # jt.gc()
 
         if global_step%args.i_weights==0:
             path = os.path.join(cfg.basedir, cfg.expname, f'{stage}_{global_step:06d}.tar')
@@ -564,12 +549,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                 'optimizer_state_dict': optimizer.state_dict(),
             }, path)
             print(f'scene_rep_reconstruction ({stage}): saved checkpoints at', path)
-        jt.clean_graph()
-        # density_save_name="density_iter_{}.npy".format(global_step)
-        # np.save(density_save_name,model.density.grid.data)
-        # k0_save_name="k0_iter_{}.npy".format(global_step)
-        # np.save(k0_save_name,model.k0.grid.data)
-        #print("Iter {} density min {}".format(global_step,model.density.grid.data.min().item()))
+        #jt.clean_graph()
     if global_step != -1:
         jt.save({
             'global_step': global_step, 
