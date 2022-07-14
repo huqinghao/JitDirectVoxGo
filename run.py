@@ -507,8 +507,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
 
         # gradient descent step
         optimizer.zero_grad()
-        loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)
+        loss = cfg_train.weight_main * nn.mse_loss(render_result['rgb_marched'], target)+\
+                        nn.mse_loss(render_result['alphainv_last'],(1.-target[...,-1:]))
         psnr = utils.mse2psnr(loss.detach())
+        
         if cfg_train.weight_entropy_last > 0:
             pout = render_result['alphainv_last'].clamp(1e-6, 1-1e-6)
             entropy_last_loss = -(pout*jt.log(pout) + (1-pout)*jt.log(1-pout)).mean()
