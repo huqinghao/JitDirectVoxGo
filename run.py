@@ -490,7 +490,11 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         target_alpha=target[...,-1:].copy()
         if target.shape[-1] == 4:
             if cfg.data.rand_bkgd:
-                rand_bkgd_color = jt.randn((target.shape[0],3))
+                # if jt.rand(1)>0.7:
+                #     rand_bkgd_color = jt.rand((target.shape[0],3))
+                # else:
+                #     rand_bkgd_color = jt.ones((target.shape[0],3))
+                rand_bkgd_color = jt.rand((target.shape[0],3))
                 target = target[...,:3]*target[...,-1:] + rand_bkgd_color*(1.-target[...,-1:])
                 render_kwargs.update({
                     "rand_bkgd_color":rand_bkgd_color
