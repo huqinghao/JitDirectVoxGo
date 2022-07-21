@@ -5,3 +5,9 @@
 *.dae
 data
 logs
+npy
+filter_data
+filter_npy_data
+*.zip
+configs/
+.vscode/

@@ -13,7 +13,7 @@
 
 ## 安装 
 
-本项目可在 2 张 RTX 3090 上运行，根据不同的训练设置，训练时间从5分钟到8个小时不等。
+本项目可在 1 张 RTX 3090 上运行，根据不同的训练设置，训练时间从5分钟到2个小时不等。
 
 #### 运行环境
 - ubuntu 20.04 LTS
@@ -132,7 +132,7 @@ pip install -r requirements.txt
 - Evaluation
     To only evaluate the valset `PSNR`, `SSIM`, and `LPIPS` of the trained `Easyship` without re-training, run:
     ```bash
-    $ python run.py --config configs/comp/Easyship.py --render_val --render_test 
+    $ python run.py --config configs/comp/Easyship.py --render_val --render_test --render_only
     ```
 - Render video
     ```bash

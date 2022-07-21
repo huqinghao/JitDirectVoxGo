@@ -286,36 +286,19 @@ def create_new_model(cfg, cfg_model, cfg_train, xyz_min, xyz_max, stage, coarse_
     if len(cfg_train.pg_scale):
         num_voxels = int(num_voxels / (2**len(cfg_train.pg_scale)))
 
-    if cfg.data.ndc:
-        print(f'scene_rep_reconstruction ({stage}): \033[96muse multiplane images\033[0m')
-        model = dmpigo.DirectMPIGO(
-            xyz_min=xyz_min, xyz_max=xyz_max,
-            num_voxels=num_voxels,
-            **model_kwargs)
-    elif cfg.data.unbounded_inward:
-        print(f'scene_rep_reconstruction ({stage}): \033[96muse contraced voxel grid (covering unbounded)\033[0m')
-        model = dcvgo.DirectContractedVoxGO(
-            xyz_min=xyz_min, xyz_max=xyz_max,
-            num_voxels=num_voxels,
-            **model_kwargs)
-    else:
-        print(f'scene_rep_reconstruction ({stage}): \033[96muse dense voxel grid\033[0m')
-        model = dvgo.DirectVoxGO(
-            xyz_min=xyz_min, xyz_max=xyz_max,
-            num_voxels=num_voxels,
-            mask_cache_path=coarse_ckpt_path,
-            **model_kwargs)
+
+    print(f'scene_rep_reconstruction ({stage}): \033[96muse dense voxel grid\033[0m')
+    model = dvgo.DirectVoxGO(
+        xyz_min=xyz_min, xyz_max=xyz_max,
+        num_voxels=num_voxels,
+        mask_cache_path=coarse_ckpt_path,
+        **model_kwargs)
     # model = model.to(device)
     optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
     return model, optimizer
 
 def load_existed_model(args, cfg, cfg_train, reload_ckpt_path):
-    if cfg.data.ndc:
-        model_class = dmpigo.DirectMPIGO
-    elif cfg.data.unbounded_inward:
-        model_class = dcvgo.DirectContractedVoxGO
-    else:
-        model_class = dvgo.DirectVoxGO
+    model_class = dvgo.DirectVoxGO
     # model = utils.load_model(model_class, reload_ckpt_path).to(device)
     model = utils.load_model(model_class, reload_ckpt_path)
 
@@ -450,8 +433,6 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             cur_voxels = int(cfg_model.num_voxels / (2**n_rest_scales))
             if isinstance(model, (dvgo.DirectVoxGO)):
                 model.scale_volume_grid(cur_voxels)
-            elif isinstance(model, dmpigo.DirectMPIGO):
-                model.scale_volume_grid(cur_voxels, model.mpi_depth)
             else:
                 raise NotImplementedError
             optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
@@ -726,12 +707,7 @@ if __name__=='__main__':
         else:
             ckpt_path = os.path.join(cfg.basedir, cfg.expname, 'fine_last.tar')
         
-        if cfg.data.ndc:
-            model_class = dmpigo.DirectMPIGO
-        elif cfg.data.unbounded_inward:
-            model_class = dcvgo.DirectContractedVoxGO
-        else:
-            model_class = dvgo.DirectVoxGO
+        model_class = dvgo.DirectVoxGO
         model = utils.load_model(model_class, ckpt_path)
 
     raw_images = data_dict.pop('images')
