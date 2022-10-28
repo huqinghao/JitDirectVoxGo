@@ -127,7 +127,7 @@ pip install -r requirements.txt
 
 - Training
     ```bash
-    $ python run.py --config configs/comp/Easyship.py --render_val
+    $ python run.py --config configs/comp/Easyship.py --render_val --render_test
     ```
 - Evaluation
     To only evaluate the valset `PSNR`, `SSIM`, and `LPIPS` of the trained `Easyship` without re-training, run:
