@@ -101,7 +101,9 @@ class GridSampler(Function):
 if __name__ == '__main__':
     import numpy as np
     import torch
-    jt.flags.use_cuda = 2 
+    import time 
+
+    jt.flags.use_cuda = 1
     # jt.flags.use_device = 7
     grid = np.random.randn(1,3,99,101,101)
     xyz = np.random.randn(629236,3)
@@ -112,24 +114,49 @@ if __name__ == '__main__':
     
     jt_grid = jt.array(grid)
     jt_nor_xyz = jt.array(nor_xyz)
-        
-    jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
+
+    torch_grid = torch.from_numpy(grid).cuda()
+    torch_nor_xyz = torch.from_numpy(nor_xyz).cuda()
     manu_feature = grid_sample(jt_grid,jt_nor_xyz, mode='bilinear', align_corners=True) 
-    jt.sync_all()
+
+       
+    iters = 100
+    start_time = time.time()
+    for _ in range(iters):  
+        torch_feature = torch.nn.functional.grid_sample(torch_grid,torch_nor_xyz,mode='bilinear',align_corners=True) #.numpy() - manu_feature.data
+    print(f"Pytorch per time cost {(time.time()-start_time)/iters}")
     
+    jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
+    jt.sync_all()
     cpu_gpu_diff = manu_feature - jt_feature
     
-    torch_grid = torch.from_numpy(grid)
-    torch_nor_xyz = torch.from_numpy(nor_xyz)
-    
-    torch_self_diff = torch.nn.functional.grid_sample(torch_grid,torch_nor_xyz,mode='bilinear',align_corners=True).numpy() - manu_feature.data
-
-
-    import time 
     start_time = time.time()
-    total_count = 2000
+    for _ in range(iters):  
+        jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
+        jt.sync_all()
+    print(f"Jittor official per time cost {(time.time()-start_time)/iters}")
+    
+    start_time = time.time()
+    manu_feature = grid_sample(jt_grid,jt_nor_xyz, mode='bilinear', align_corners=True) 
+    cpu_gpu_diff = manu_feature - jt_feature
+    jt.sync_all()
+    # print(f"Jittor ours first time cost {(time.time()-start_time)}")
+    
+    start_time = time.time()
+    for _ in range(10):  
+        manu_feature = grid_sample(jt_grid,jt_nor_xyz, mode='bilinear', align_corners=True) 
+        jt.sync_all()
+    # print(f"Jittor ours per time cost {(time.time()-start_time)/2}")
+
+    
+    gpu_diff = manu_feature - jt_feature
+    print(gpu_diff.max(),gpu_diff.min())
+
+
+    start_time = time.time()
+    total_count = 200
     for i in range(total_count):
       manu_feature = grid_sample(jt_grid,jt_nor_xyz, mode='bilinear', align_corners=True) 
       jt.sync_all()
     total_time = time.time() - start_time
-    print("AVG time : ", total_time/total_count)
+    print(f"Jittor ours per time cost {total_time/total_count}")

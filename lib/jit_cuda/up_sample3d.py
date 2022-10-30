@@ -190,19 +190,29 @@ __global__ void upsample_trilinear3d_out_frame(
 if __name__ == '__main__':
     import numpy as np 
     jt.flags.use_cuda = 2
+    import time
     import torch
     import torch.nn.functional as F
-    # input = np.random.rand(1,1,89,100,120).astype("float32")
-    # np.save("npy/interpolate_input.npy",input)
-
-    # input_jittor = jt.array(input)
-    # res_jittor = interpolate(input_jittor,jt.array((130,248,355)),mode='trilinear',align_corners=True)
     
-    # res_torch = F.interpolate(torch.from_numpy(input),(130,248,355),mode='trilinear',align_corners=True)
+    input = np.random.rand(1,1,89,100,120).astype("float32")
+    input_jittor = jt.array(input)
+    torch_input = torch.from_numpy(input).cuda()
+
+    iters = 10000
+    start_time = time.time()
+    
+    for _ in range(iters):
+      res_jittor = interpolate(input_jittor,jt.array((130,248,355)),mode='trilinear',align_corners=True)
+    print(f"per time on Jittor : {(time.time()-start_time)/iters}")
+    
+    start_time = time.time()
+    for _ in range(iters):
+      res_torch = F.interpolate(torch_input,(130,248,355),mode='trilinear',align_corners=True)
+    print(f"per time on torch  : {(time.time()-start_time)/iters}")
     
     # diff = res_torch.numpy() - res_jittor.data
-    # # print(diff)
-    
+    # print(np.abs(diff).max())
+    # exit()
     # # print(diff.shape)
     
     grid = np.random.randn(1,3,99,101,101)
@@ -230,6 +240,7 @@ if __name__ == '__main__':
     
     jt_feature = jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) 
     jt.sync_all()
+    start_time = time.time()
     jt_feature = jt.stack([jt.nn.grid_sample(jt_grid, jt_nor_xyz, mode='bilinear', align_corners=True) for i in range(time_count)], 0)
 
 
